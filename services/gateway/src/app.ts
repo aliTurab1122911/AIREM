@@ -6,9 +6,14 @@ import { Readable } from 'node:stream';
 import { request as undiciRequest, type Dispatcher } from 'undici';
 import type { Config } from './config.js';
 import type { GatewayStore } from './store.js';
+import {
+  registerDetectionAdapter, registerDocumentAdapter, registerDownloadAdapter,
+  registerFormattingAdapter, registerOpenAiRangeEditAdapter, registerRangeAdapter,
+  registerRewriteAdapter, registerTextRewriteAdapter, registerValidationAdapter,
+  type AdapterRoute,
+} from './adapters/index.js';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
-const EXTENSIONS = new Set(['.docx', '.pdf']);
 const MUTATIONS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const BODYLESS = new Set(['GET', 'HEAD']);
 const RESPONSE_METADATA_LIMIT = 2 * 1024 * 1024;
@@ -16,40 +21,28 @@ const RESPONSE_METADATA_LIMIT = 2 * 1024 * 1024;
 type UpstreamResponse = { statusCode: number; headers: Record<string, string | string[] | undefined>; body: NodeJS.ReadableStream };
 export type Upstream = (args: { method: string; path: string; headers: Record<string, string | string[] | undefined>; body?: NodeJS.ReadableStream }) => Promise<UpstreamResponse>;
 
-function targetPath(url: string) {
-  const [pathname, query] = url.split('?', 2);
-  const rules: [RegExp, string][] = [
-    [/^\/api\/documents\/upload$/, '/upload'], [/^\/api\/documents\/jobs\//, '/job/'],
-    [/^\/api\/documents\/preview\//, '/preview/'], [/^\/api\/documents\/download\//, '/download/'],
-    [/^\/api\/rewrite\//, '/rewrite/'], [/^\/api\/detection\/text$/, '/api/detect-text'],
-    [/^\/api\/detection\/file$/, '/api/detect-file'], [/^\/api\/formatting\/analyse$/, '/formatting/analyse'],
-    [/^\/api\/formatting\/apply\//, '/formatting/apply/'],
-  ];
-  const mapped = rules.reduce((value, [pattern, replacement]) => pattern.test(value) ? value.replace(pattern, replacement) : value, pathname);
-  return query ? `${mapped}?${query}` : mapped;
-}
-
-function uploadExtension(contentDisposition: string) {
+function uploadExtension(contentDisposition: string, extensions: readonly string[]) {
   const match = /filename\*?=(?:UTF-8''|"?)([^";\r\n]+)/i.exec(contentDisposition);
   if (!match) return undefined;
   const filename = decodeURIComponent(match[1].replace(/"$/, '')).toLowerCase();
-  return [...EXTENSIONS].find(extension => filename.endsWith(extension));
+  return extensions.find(extension => filename.endsWith(extension));
 }
 
-async function validateMultipart(payload: NodeJS.ReadableStream, headerDisposition: string) {
+async function validateMultipart(payload: NodeJS.ReadableStream, field: string, extensions: readonly string[]) {
   const iterator = (payload as AsyncIterable<Buffer>)[Symbol.asyncIterator]();
-  const buffered: Buffer[] = []; let inspected = ''; let inspectedBytes = 0; let extension = uploadExtension(headerDisposition);
-  while (!extension && inspectedBytes < 256 * 1024) {
+  const buffered: Buffer[] = []; let inspected = ''; let inspectedBytes = 0; let extension: string | undefined;
+  while ((!extension || !new RegExp(`name="${field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(inspected)) && inspectedBytes < 256 * 1024) {
     const next = await iterator.next();
     if (next.done) break;
     const chunk = Buffer.from(next.value); buffered.push(chunk); inspectedBytes += chunk.length;
     inspected += chunk.toString('latin1');
     const filename = /filename\*?=(?:UTF-8''|"?)([^";\r\n]+)/i.exec(inspected)?.[0] ?? '';
-    extension = uploadExtension(filename);
-    if (/filename\*?=/i.test(inspected) && !extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
+    extension = uploadExtension(filename, extensions);
+    if (filename && !extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
+    if (extension && !extensions.includes(extension)) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
     if (inspected.length > 4096) inspected = inspected.slice(-4096);
   }
-  if (!extension) throw Object.assign(new Error('multipart upload filename missing'), { statusCode: 415 });
+  if (!extension || !new RegExp(`name="${field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(inspected)) throw Object.assign(new Error('multipart upload field missing'), { statusCode: 400 });
   async function* replay() { for (const chunk of buffered) yield chunk; for await (const chunk of { [Symbol.asyncIterator]: () => iterator } as AsyncIterable<Buffer>) yield chunk; }
   return Readable.from(replay());
 }
@@ -79,7 +72,7 @@ export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream) 
     return reply.status(status).send({ error: { code: status === 413 ? 'UPLOAD_TOO_LARGE' : status === 429 ? 'RATE_LIMITED' : 'GATEWAY_ERROR' }, requestId: request.id });
   });
 
-  const handler = async (request: FastifyRequest, reply: any) => {
+  const handler = (route: AdapterRoute) => async (request: FastifyRequest, reply: any) => {
     const session = request.cookies.session;
     const userId = session && await store.sessionUser(session);
     if (!userId) return reply.status(401).send({ error: { code: 'AUTH_REQUIRED' }, requestId: request.id });
@@ -92,12 +85,24 @@ export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream) 
     if (contentType.startsWith('multipart/form-data')) {
       const length = Number(request.headers['content-length'] ?? 0);
       if (length && length > cfg.UPLOAD_MAX_BYTES) return reply.status(413).send({ error: { code: 'UPLOAD_TOO_LARGE' }, requestId: request.id });
-      try { requestBody = await validateMultipart(requestBody, String(request.headers['content-disposition'] ?? '')); }
-      catch { return reply.status(415).send({ error: { code: 'UNSUPPORTED_FILE_TYPE' }, requestId: request.id }); }
+      if (!route.multipart) return reply.status(415).send({ error: { code: 'UNSUPPORTED_MEDIA_TYPE' }, requestId: request.id });
+      try { requestBody = await validateMultipart(requestBody, route.multipart.field, route.multipart.extensions); }
+      catch (error) { const status = (error as { statusCode?: number }).statusCode ?? 415; return reply.status(status).send({ error: { code: status === 400 ? 'VALIDATION_ERROR' : 'UNSUPPORTED_FILE_TYPE' }, requestId: request.id }); }
+    } else if (route.bodySchema && !BODYLESS.has(request.method)) {
+      if (!contentType.includes('application/json')) return reply.status(415).send({ error: { code: 'UNSUPPORTED_MEDIA_TYPE' }, requestId: request.id });
+      const chunks: Buffer[] = []; for await (const chunk of requestBody as AsyncIterable<Buffer>) chunks.push(Buffer.from(chunk));
+      let value: unknown; try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply.status(400).send({ error: { code: 'INVALID_JSON' }, requestId: request.id }); }
+      const parsed = route.bodySchema.safeParse(value);
+      if (!parsed.success) return reply.status(422).send({ error: { code: 'VALIDATION_ERROR', issues: parsed.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })) }, requestId: request.id });
+      requestBody = Readable.from(route.encode ? route.encode(parsed.data) : JSON.stringify(parsed.data));
     }
 
     const started = Date.now();
-    const response = await dispatch({ method: request.method, path: targetPath(request.url), headers: cleanHeaders(request.headers, request.id), body: BODYLESS.has(request.method) ? undefined : requestBody });
+    const upstreamPath = typeof route.upstream === 'function' ? route.upstream(request) : route.upstream;
+    const query = request.url.includes('?') ? `?${request.url.split('?', 2)[1]}` : '';
+    const forwardedHeaders = cleanHeaders(request.headers, request.id);
+    if (route.encode) forwardedHeaders['content-type'] = 'application/x-www-form-urlencoded';
+    const response = await dispatch({ method: request.method, path: `${upstreamPath}${query}`, headers: forwardedHeaders, body: BODYLESS.has(request.method) ? undefined : requestBody });
     const responseType = String(response.headers['content-type'] ?? '');
     const isDownload = responseType.includes('application/pdf') || responseType.includes('officedocument') || String(response.headers['content-disposition'] ?? '').includes('attachment');
     const responseHeaders = { ...response.headers, 'x-request-id': request.id };
@@ -121,15 +126,18 @@ export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream) 
       }
     }
     request.log.info({ requestId: request.id, userId, method: request.method, path: request.routeOptions.url, statusCode: response.statusCode, durationMs: Date.now() - started }, 'gateway access');
+    if (route.html === 'json' && responseType.includes('text/html')) {
+      reply.removeHeader('content-type'); reply.removeHeader('content-length');
+      return reply.type('application/json').send({ representation: 'legacy-html', content_type: responseType, html: body.toString('utf8') });
+    }
     return reply.send(body);
   };
 
-  const options = { config: { rateLimit: { max: cfg.RATE_LIMIT_MAX, timeWindow: '1 minute' } }, handler };
-  app.route({ method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/documents/*', ...options });
-  app.route({ method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/rewrite/*', ...options });
-  app.route({ method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/detection/*', ...options });
-  app.route({ method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/formatting/*', ...options });
-  for (const url of ['/job/*', '/preview/*', '/download/*', '/rewrite/*', '/formatting/*']) app.route({ method: ['GET', 'HEAD', 'POST'], url, ...options });
+  registerDocumentAdapter(app, handler); registerRangeAdapter(app, handler);
+  registerRewriteAdapter(app, handler); registerValidationAdapter(app, handler);
+  registerTextRewriteAdapter(app, handler); registerDetectionAdapter(app, handler);
+  registerFormattingAdapter(app, handler); registerDownloadAdapter(app, handler);
+  registerOpenAiRangeEditAdapter(app, handler);
   app.get('/healthz', async () => ({ ok: true }));
   return app;
 }
