@@ -7,7 +7,7 @@ const links = [
   { to: '/app/rewrite', label: 'New rewrite', icon: FilePlus2 },
   { to: '/app/documents', label: 'Documents', icon: Files },
   { to: '/app/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/app/billing', label: 'Usage & billing', icon: CreditCard },
+  { to: '/app/billing', label: 'Usage & plan', icon: CreditCard },
   { to: '/app/settings', label: 'Settings', icon: Settings },
 ]
 
