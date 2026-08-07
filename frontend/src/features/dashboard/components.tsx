@@ -1,12 +1,189 @@
-import { AlertTriangle, Bell, Clock3, FileText, ShieldCheck } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import type { AccountDashboard, WorkflowStatus } from './types'
-const number=new Intl.NumberFormat()
-const date=(value:string)=>new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(new Date(value))
+import {
+  AlertTriangle,
+  Bell,
+  Clock3,
+  FileText,
+  ShieldCheck,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import type { AccountDashboard, WorkflowStatus } from "./types";
+const number = new Intl.NumberFormat();
+const date = (value: string) =>
+  new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value),
+  );
 
-export function UsageOverview({data}:{data:AccountDashboard}) { const items=[['Words processed',data.usage.wordsProcessed,'Current billing period'],['Words remaining',data.usage.remainingWords,`of ${number.format(data.usage.wordAllowance)} allowed`],['Protected details',data.protectedDetails.total,'Kept intact'],['Review warnings',data.reviewWarnings.total,'Outstanding']]; return <div className="dashboard-stat-grid">{items.map(([label,value,note])=><article className="card dashboard-stat" key={label}><p>{label}</p><strong>{number.format(value as number)}</strong><small>{note}</small></article>)}</div> }
-export function WorkflowSummary({data}:{data:AccountDashboard}) { return <section className="card dashboard-panel"><div className="panel-head"><div><p className="eyebrow">Documents</p><h3>Workflow status</h3></div><strong>{data.documents.total}</strong></div><div className="workflow-grid">{(Object.entries(data.documents.byStatus) as [WorkflowStatus,number][]).map(([status,total])=><div key={status}><span className={`status status-${status}`}>{status}</span><strong>{total}</strong></div>)}</div></section> }
-export function RecentDocuments({data}:{data:AccountDashboard}) { const docs=data.recentDocuments.documents; return <section className="card dashboard-panel"><div className="panel-head"><div><p className="eyebrow">Your work</p><h3>Recent documents</h3></div><Link to="/app/documents">View all</Link></div>{docs.length===0?<div className="small-empty"><FileText/><p>No documents yet.</p><Link to="/app/rewrite">Start your first rewrite</Link></div>:docs.map(doc=><Link className="recent-doc" to="/app/documents" key={doc.id}><FileText size={17}/><span><strong>{doc.title}</strong><small><Clock3 size={12}/> Edited {date(doc.updatedAt)} · {number.format(doc.wordCount)} words</small></span><em>{doc.status}</em></Link>)}</section> }
-export function Notifications({data}:{data:AccountDashboard}) { const notes=data.notifications.notifications; return <section className="card dashboard-panel"><div className="panel-head"><div><p className="eyebrow">Inbox</p><h3>Notifications</h3></div><span>{data.notifications.unreadCount} unread</span></div>{notes.length===0?<div className="small-empty"><Bell/><p>You're all caught up.</p></div>:notes.slice(0,4).map(note=><article className={`notice ${note.isRead?'':'unread'}`} key={note.id}><i/><div><strong>{note.title}</strong><p>{note.body}</p><small>{date(note.createdAt)}</small></div></article>)}</section> }
-export function UsageHistory({data}:{data:AccountDashboard}) { const months=data.usageHistory.months,max=Math.max(1,...months.map(item=>item.wordsProcessed)); return <section className="card dashboard-panel usage-history"><div className="panel-head"><div><p className="eyebrow">Reports</p><h3>Monthly usage</h3></div></div>{months.length===0?<div className="small-empty"><FileText/><p>Usage history will appear after your first document.</p></div>:<div className="usage-bars">{months.map(item=><div key={item.month}><span style={{height:`${Math.max(4,item.wordsProcessed/max*100)}%`}} title={`${number.format(item.wordsProcessed)} words`}/><small>{new Intl.DateTimeFormat(undefined,{month:'short',timeZone:'UTC'}).format(new Date(item.month))}</small></div>)}</div>}</section> }
-export function PlanSummary({data}:{data:AccountDashboard}) { return <section className="card plan-summary"><ShieldCheck/><div><p className="eyebrow">Plan metadata</p><h3>{data.subscription.planName}</h3><span>{data.subscription.renewsAt?`Renews ${date(data.subscription.renewsAt)}`:'No renewal scheduled'}</span></div><div className="billing-notice"><AlertTriangle size={14}/><span>Billing is not enabled. Plan details are informational.</span></div></section> }
+export function UsageOverview({ data }: { data: AccountDashboard }) {
+  const items = [
+    ["Words processed", data.usage.wordsProcessed, "Current billing period"],
+    [
+      "Words remaining",
+      data.usage.remainingWords,
+      `of ${number.format(data.usage.wordAllowance)} allowed`,
+    ],
+    ["Protected details", data.protectedDetails.total, "Kept intact"],
+    ["Review warnings", data.reviewWarnings.total, "Outstanding"],
+  ];
+  return (
+    <div className="dashboard-stat-grid">
+      {items.map(([label, value, note]) => (
+        <article className="card dashboard-stat" key={label}>
+          <p>{label}</p>
+          <strong>{number.format(value as number)}</strong>
+          <small>{note}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+export function WorkflowSummary({ data }: { data: AccountDashboard }) {
+  return (
+    <section className="card dashboard-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Documents</p>
+          <h3>Workflow status</h3>
+        </div>
+        <strong>{data.documents.total}</strong>
+      </div>
+      <div className="workflow-grid">
+        {(
+          Object.entries(data.documents.byStatus) as [WorkflowStatus, number][]
+        ).map(([status, total]) => (
+          <div key={status}>
+            <span className={`status status-${status}`}>{status}</span>
+            <strong>{total}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+export function RecentDocuments({ data }: { data: AccountDashboard }) {
+  const docs = data.recentDocuments.documents;
+  return (
+    <section className="card dashboard-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Your work</p>
+          <h3>Recent documents</h3>
+        </div>
+        <Link to="/app/documents">View all</Link>
+      </div>
+      {docs.length === 0 ? (
+        <div className="small-empty">
+          <FileText />
+          <p>No documents yet.</p>
+          <Link to="/app/rewrite">Start your first rewrite</Link>
+        </div>
+      ) : (
+        docs.map((doc) => (
+          <Link className="recent-doc" to="/app/documents" key={doc.id}>
+            <FileText size={17} />
+            <span>
+              <strong>{doc.title}</strong>
+              <small>
+                <Clock3 size={12} /> Edited {date(doc.updatedAt)} ·{" "}
+                {number.format(doc.wordCount)} words
+              </small>
+            </span>
+            <em>{doc.status}</em>
+          </Link>
+        ))
+      )}
+    </section>
+  );
+}
+export function Notifications({ data }: { data: AccountDashboard }) {
+  const notes = data.notifications.notifications;
+  return (
+    <section className="card dashboard-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Inbox</p>
+          <h3>Notifications</h3>
+        </div>
+        <span>{data.notifications.unreadCount} unread</span>
+      </div>
+      {notes.length === 0 ? (
+        <div className="small-empty">
+          <Bell />
+          <p>You're all caught up.</p>
+        </div>
+      ) : (
+        notes.slice(0, 4).map((note) => (
+          <article
+            className={`notice ${note.isRead ? "" : "unread"}`}
+            key={note.id}
+          >
+            <i />
+            <div>
+              <strong>{note.title}</strong>
+              <p>{note.body}</p>
+              <small>{date(note.createdAt)}</small>
+            </div>
+          </article>
+        ))
+      )}
+    </section>
+  );
+}
+export function UsageHistory({ data }: { data: AccountDashboard }) {
+  const months = data.usageHistory.months,
+    max = Math.max(1, ...months.map((item) => item.wordsProcessed));
+  return (
+    <section className="card dashboard-panel usage-history">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Reports</p>
+          <h3>Monthly usage</h3>
+        </div>
+      </div>
+      {months.length === 0 ? (
+        <div className="small-empty">
+          <FileText />
+          <p>Usage history will appear after your first document.</p>
+        </div>
+      ) : (
+        <div className="usage-bars">
+          {months.map((item) => (
+            <div key={item.month}>
+              <span
+                style={{
+                  height: `${Math.max(4, (item.wordsProcessed / max) * 100)}%`,
+                }}
+                title={`${number.format(item.wordsProcessed)} words`}
+              />
+              <small>
+                {new Intl.DateTimeFormat(undefined, {
+                  month: "short",
+                  timeZone: "UTC",
+                }).format(new Date(item.month))}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+export function PlanSummary({ data }: { data: AccountDashboard }) {
+  return (
+    <section className="card plan-summary">
+      <ShieldCheck />
+      <div>
+        <p className="eyebrow">Plan metadata</p>
+        <h3>{data.subscription.planName}</h3>
+        <span>
+          {data.subscription.renewsAt
+            ? `Renews ${date(data.subscription.renewsAt)}`
+            : "No renewal scheduled"}
+        </span>
+      </div>
+      <div className="billing-notice">
+        <AlertTriangle size={14} />
+        <span>Billing is not enabled. Plan details are informational.</span>
+      </div>
+    </section>
+  );
+}
