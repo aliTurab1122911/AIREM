@@ -73,3 +73,11 @@ Rewrite JSON accepts `profile` (name or custom object), `profile_id`, `intensity
 ## Backward compatibility
 
 Existing processor URLs and payloads are unchanged, and `app.py` remains the implementation of document operations. The gateway adapters only authenticate, authorize, validate, translate JSON-to-form where required, normalize rendered HTML, track usage, and stream files. Previously published gateway paths for documents, rewrite, detection, and formatting remain represented by the explicit routes above; direct legacy gateway catch-all routes are intentionally not part of the public contract.
+
+## Queue-backed processing jobs
+
+Authenticated clients create a job with `POST /api/jobs`, an `Idempotency-Key` header (8–200 characters), and JSON `{ "operation": "text_rewrite", "payload": { ... } }`. Supported operations are `text_rewrite`, `text_detection`, `document_rewrite`, `document_validation`, and `formatting_apply`; document operations include the existing Flask `source_job_id` in the payload. A new request returns `202`; replaying the same owner/key returns the original job with `200` and never enqueues another copy.
+
+`GET /api/jobs/:id` and `GET /api/jobs` are owner-scoped. `GET /api/jobs/:id/events` emits bounded (at most 20 seconds) `progress` SSE events. Clients reconnect or use the status endpoint. `DELETE /api/jobs/:id` cancels only a Redis job that is still waiting or delayed. Public states are `queued`, `processing`, `review_required`, `completed`, `failed`, and `expired`.
+
+Workers retry only network errors and HTTP 408, 425, 429, 500, 502, 503, or 504, up to three attempts with exponential backoff. Other failures are final. User responses contain stable codes and sanitized messages; worker logs retain stack traces with job IDs. PostgreSQL uniqueness constraints on the job idempotency key, output job ID, and usage charge job ID ensure retries cannot create multiple outputs or double-charge usage.

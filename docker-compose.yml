@@ -12,10 +12,24 @@ services:
       DATABASE_URL: postgresql://airem:${POSTGRES_PASSWORD:-change-me}@postgres:5432/airem
       COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
       FLASK_ORIGIN: http://processor:5000
+      REDIS_URL: redis://redis:6379
       NODE_ENV: production
     expose: ["4000"]
     networks: [public, processor]
-    depends_on: [postgres, processor]
+    depends_on: [postgres, processor, redis]
+  worker:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: postgresql://airem:${POSTGRES_PASSWORD:-change-me}@postgres:5432/airem
+      COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
+      FLASK_ORIGIN: http://processor:5000
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    networks: [processor]
+    depends_on: [postgres, processor, redis]
   processor:
     build:
       context: .
@@ -32,10 +46,16 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./services/accounts/migrations/0001_accounts.sql:/docker-entrypoint-initdb.d/01-accounts.sql:ro
       - ./services/gateway/migrations/0001_gateway.sql:/docker-entrypoint-initdb.d/02-gateway.sql:ro
-    networks: [public]
+    networks: [public, processor]
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis-data:/data]
+    networks: [processor]
 networks:
   public: {}
   processor:
     internal: true
 volumes:
   postgres-data: {}
+  redis-data: {}

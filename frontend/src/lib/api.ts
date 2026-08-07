@@ -29,9 +29,13 @@ export interface DashboardData {
   documents: Array<{ id: string; title: string; wordCount: number; updatedAt: string; status: string }>
   plan: { name: string; renewsAt?: string; price?: string }
 }
+export type JobState = 'queued'|'processing'|'review_required'|'completed'|'failed'|'expired'
+export interface ProcessingJob { id:string; operation:string; state:JobState; progress:number; attempt:number; maxAttempts:number; errorMessage?:string; createdAt:string; updatedAt:string }
 
 export const api = {
   dashboard: () => request<DashboardData>('/api/dashboard'),
+  jobs: () => request<{jobs:ProcessingJob[]}>('/api/jobs'),
+  cancelJob: (id:string) => request(`/api/jobs/${id}`, { method:'DELETE' }),
   login: (email: string, password: string) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   register: (name: string, email: string, password: string) => request('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
   forgotPassword: (email: string) => request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
