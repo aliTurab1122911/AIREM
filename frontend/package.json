@@ -1,0 +1,9 @@
+{
+  "name": "airem-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {"postinstall":"node scripts/install-fonts.mjs","dev":"vite --host 0.0.0.0","build":"tsc -b && vite build","lint":"eslint .","preview":"vite preview --host 0.0.0.0"},
+  "dependencies": {"@fontsource-variable/inter":"^5.2.6","@fontsource-variable/space-grotesk":"^5.2.10","react":"latest","react-dom":"latest","react-router-dom":"latest","lucide-react":"latest"},
+  "devDependencies": {"@eslint/js":"latest","@types/react":"latest","@types/react-dom":"latest","@vitejs/plugin-react":"latest","eslint":"latest","eslint-plugin-react-hooks":"latest","eslint-plugin-react-refresh":"latest","globals":"latest","typescript":"latest","typescript-eslint":"latest","vite":"latest"}
+}
