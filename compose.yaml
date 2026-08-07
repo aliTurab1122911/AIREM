@@ -1,0 +1,120 @@
+name: airem
+
+x-node-environment: &node-environment
+  DATABASE_URL: postgresql://${POSTGRES_USER:-airem}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airem}
+  COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
+  NODE_ENV: production
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 45s
+  security_opt: [no-new-privileges:true]
+  read_only: true
+
+services:
+  frontend:
+    <<: *service-defaults
+    build: {context: ./frontend, target: production}
+    ports: ["${PUBLIC_HTTPS_PORT:-8443}:8443"]
+    volumes:
+      - ${TLS_CERT_PATH:-./deploy/tls/tls.crt}:/run/tls/tls.crt:ro
+      - ${TLS_KEY_PATH:-./deploy/tls/tls.key}:/run/tls/tls.key:ro
+    tmpfs: [/var/cache/nginx:uid=101,gid=101,mode=0750, /var/run:uid=101,gid=101,mode=0750, /tmp:uid=101,gid=101,mode=0750]
+    depends_on:
+      accounts: {condition: service_healthy}
+      gateway: {condition: service_healthy}
+    networks: [edge, backend]
+    healthcheck: {test: [CMD-SHELL, "wget --no-check-certificate -qO- https://127.0.0.1:8443/ >/dev/null"], interval: 30s, timeout: 5s, retries: 3, start_period: 10s}
+    deploy: {resources: {limits: {cpus: "0.50", memory: 128M}}}
+
+  accounts:
+    <<: *service-defaults
+    build: ./services/accounts
+    environment:
+      <<: *node-environment
+      APP_ORIGIN: ${APP_ORIGIN:-https://localhost:8443}
+      PORT: 4000
+    expose: ["4000"]
+    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [backend]
+    healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
+    deploy: {resources: {limits: {cpus: "0.50", memory: 256M}}}
+
+  gateway:
+    <<: *service-defaults
+    build: {context: ., dockerfile: services/gateway/Dockerfile}
+    environment:
+      <<: *node-environment
+      FLASK_ORIGIN: http://processor:5000
+      REDIS_URL: redis://redis:6379
+      USER_JOB_CONCURRENCY: ${USER_JOB_CONCURRENCY:-2}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-60}
+    expose: ["4000"]
+    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      processor: {condition: service_healthy}
+    networks: [backend]
+    healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
+    deploy: {resources: {limits: {cpus: "1.0", memory: 512M}}}
+
+  processor:
+    <<: *service-defaults
+    build: {context: ., dockerfile: Dockerfile.python}
+    environment: {OPENAI_API_KEY: "${OPENAI_API_KEY:-}", OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5-mini}"}
+    expose: ["5000"]
+    volumes: [documents:/app/instance]
+    tmpfs: [/tmp:uid=999,gid=999,mode=0700]
+    networks: [backend]
+    healthcheck: {test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"], interval: 20s, timeout: 5s, retries: 5, start_period: 30s}
+    deploy: {resources: {limits: {cpus: "2.0", memory: 2G}}}
+
+  worker:
+    <<: *service-defaults
+    profiles: [workers]
+    build: {context: ., dockerfile: services/gateway/Dockerfile}
+    command: [node, dist/worker.js]
+    environment:
+      <<: *node-environment
+      FLASK_ORIGIN: http://processor:5000
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      JOB_TTL_HOURS: ${JOB_TTL_HOURS:-72}
+      TEMP_UPLOAD_ROOT: /tmp/airem-uploads
+    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      processor: {condition: service_healthy}
+    networks: [backend]
+    deploy: {resources: {limits: {cpus: "2.0", memory: 1G}}}
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment: {POSTGRES_DB: "${POSTGRES_DB:-airem}", POSTGRES_USER: "${POSTGRES_USER:-airem}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: {test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"], interval: 10s, timeout: 5s, retries: 10}
+    deploy: {resources: {limits: {cpus: "1.0", memory: 1G}}}
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    read_only: true
+    command: [redis-server, --save, "", --appendonly, "no", --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    tmpfs: [/data:uid=999,gid=999,mode=0700]
+    networks: [backend]
+    healthcheck: {test: [CMD, redis-cli, ping], interval: 10s, timeout: 3s, retries: 10}
+    deploy: {resources: {limits: {cpus: "0.50", memory: 320M}}}
+
+networks:
+  edge: {}
+  backend: {internal: true}
+volumes:
+  postgres-data: {}
+  documents: {}
