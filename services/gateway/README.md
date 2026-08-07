@@ -1,0 +1,18 @@
+# AIREM processing gateway
+
+This service is the only HTTP caller allowed onto the processor network. It validates the account session, checks `flask_job_owners` before dispatching any job URL, streams request and download bodies, and retains the Flask field names and response bytes.
+
+## Adapter routes
+
+| Public route | Existing Flask route |
+| --- | --- |
+| `POST /api/documents/upload` | `POST /upload` |
+| `/api/documents/jobs/:uuid` | `/job/:uuid` |
+| `/api/documents/{preview,download}/:uuid/*` | `/{preview,download}/:uuid/*` |
+| `/api/rewrite/*` | `/rewrite/*` |
+| `/api/detection/{text,file}` | `/api/detect-{text,file}` |
+| `/api/formatting/{analyse,apply/*}` | `/formatting/{analyse,apply/*}` |
+
+Successful metadata responses are inspected only for the returned UUID. PDF and DOCX responses are piped directly. The gateway never logs bodies, file names, query strings, cookies, authorization values, or response contents. Usage is charged from the processor's `X-Airem-Words-Processed` success header in one conditional database transaction.
+
+Run `npm run db:migrate` after the account migration, then `npm test` and `npm run build`.
