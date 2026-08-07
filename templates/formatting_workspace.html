@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Formatting Studio — Live Preview</title>
+<style>
+:root{font-family:Arial,sans-serif;color:#1f2937;--panel:#fff;--line:#d9dee8;--brand:#0f766e;--navy:#111827}
+*{box-sizing:border-box}body{margin:0;background:#eef1f6}header{background:var(--navy);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;gap:18px}header a{color:#bfdbfe;text-decoration:none}header h1{margin:3px 0 0;font-size:24px}.file-name{color:#cbd5e1;font-size:13px}.app-layout{display:grid;grid-template-columns:minmax(390px,470px) minmax(620px,1fr);gap:18px;max-width:1780px;margin:18px auto;padding:0 18px 42px}.controls-column{min-width:0}.preview-column{min-width:0}.card{background:var(--panel);border-radius:14px;padding:18px;margin-bottom:15px;box-shadow:0 6px 22px rgba(15,23,42,.07)}.card h2{font-size:18px;margin:0 0 13px}.card h3{font-size:14px;margin:17px 0 9px}.stats{display:flex;gap:7px;flex-wrap:wrap}.pill{display:inline-block;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:5px 9px;font-size:12px}.compact-report{font-size:12px;color:#475569;line-height:1.55}.control-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.control{border:1px solid #e5e7eb;border-radius:9px;padding:10px;background:#fff}.control.wide{grid-column:1/-1}.control label{display:block;font-weight:800;font-size:12px;margin-bottom:6px}.control input:not([type=checkbox]),.control select{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.check-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.check-grid label{border:1px solid #e5e7eb;border-radius:9px;padding:10px;font-size:12px;line-height:1.35;background:#fff}.check-grid input{margin-right:6px}.error{background:#fee2e2;color:#991b1b;padding:12px;border-radius:8px;margin-bottom:14px}.notice{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;padding:11px;border-radius:9px;font-size:12px;line-height:1.45}.action-bar{position:sticky;bottom:10px;z-index:20;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border:1px solid #dbe3ee;border-radius:13px;padding:11px;box-shadow:0 10px 30px rgba(15,23,42,.14);display:flex;gap:9px}.primary,.secondary{border:0;border-radius:8px;padding:12px 14px;font-weight:800;cursor:pointer}.primary{background:#047857;color:#fff;flex:1}.secondary{background:#e2e8f0;color:#0f172a}.preview-card{position:sticky;top:14px;background:#fff;border-radius:14px;box-shadow:0 6px 22px rgba(15,23,42,.08);overflow:hidden}.preview-toolbar{padding:12px 14px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.preview-toolbar strong{font-size:14px}.toolbar-group{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.toolbar-btn{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;font-size:12px}.toolbar-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}.zoom-control{display:flex;align-items:center;gap:6px;font-size:12px}.zoom-control input{width:110px}.preview-note{padding:9px 14px;background:#fffbeb;border-bottom:1px solid #fde68a;color:#78350f;font-size:11px;line-height:1.4}.preview-shell{height:calc(100vh - 175px);min-height:640px;overflow:auto;background:#cfd5df;padding:30px}.word-page{position:relative;margin:0 auto;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.22);color:#111;min-height:900px;transition:width .18s,min-height .18s,padding .18s,outline .18s;overflow:hidden}.document-content{position:relative;z-index:2}.doc-paragraph{margin:0 0 10px;white-space:pre-wrap;line-height:1.35;position:relative}.list-prefix{display:inline-block;width:22px;margin-left:-22px}.doc-table{border-collapse:collapse;width:100%;margin:12px 0}.doc-table td{border:1px solid #777;padding:5px 7px;vertical-align:top}.doc-table .doc-paragraph{margin:0 0 4px}.page-header-preview,.page-footer-preview{position:absolute;left:0;right:0;text-align:center;color:#475569;font-size:10pt;display:none;z-index:3;pointer-events:none}.page-header-preview{top:18px}.page-footer-preview{bottom:18px}.page-number-preview{display:none;margin-left:12px}.front-fields{display:none;margin-bottom:24px}.front-field{border:1px dashed #94a3b8;background:#f8fafc;padding:13px;margin-bottom:12px}.front-field h2{font-size:16px;margin:0 0 7px}.front-field p{font-size:11px;color:#64748b;margin:0}.caption-field-badge{display:none;margin-left:8px;padding:2px 6px;border-radius:999px;background:#dcfce7;color:#166534;font:700 9px Arial,sans-serif;vertical-align:middle}.repeat-header-badge{display:none;float:right;background:#e0e7ff;color:#3730a3;font:700 8px Arial,sans-serif;padding:2px 5px;border-radius:999px}
+/* Live preview typography overrides direct source formatting to match final DOCX output. */
+.word-page.live-mode .preview-body .preview-run{font-family:var(--body-font)!important;font-size:var(--body-size)!important;color:var(--body-color)!important}.word-page.live-mode .preview-title .preview-run{font-family:var(--title-font)!important;font-size:var(--title-size)!important;color:var(--heading-color)!important;font-weight:700!important}.word-page.live-mode .preview-h1 .preview-run{font-family:var(--heading-font)!important;font-size:var(--h1-size)!important;color:var(--heading-color)!important;font-weight:700!important}.word-page.live-mode .preview-h2 .preview-run{font-family:var(--heading-font)!important;font-size:var(--h2-size)!important;color:var(--heading-color)!important;font-weight:700!important}.word-page.live-mode .preview-h3 .preview-run{font-family:var(--heading-font)!important;font-size:var(--h3-size)!important;color:var(--heading-color)!important;font-weight:700!important}.word-page.live-mode .preview-caption .preview-run{font-family:var(--caption-font)!important;font-size:var(--caption-size)!important;color:var(--caption-color)!important}.word-page.live-mode .doc-paragraph{line-height:var(--line-spacing);margin-bottom:var(--space-after)}.word-page.live-mode .doc-table .preview-run{font-family:var(--table-font)!important;font-size:var(--table-size)!important}.word-page.live-mode .doc-table td{border-color:var(--table-border-color);border-width:var(--table-border-width)}.word-page.live-mode.table-style-light-shading .doc-table tr:first-child td{background:#dbeafe}.word-page.live-mode.table-style-light-shading .doc-table tr:nth-child(even) td{background:#f8fafc}.word-page.live-mode.table-style-light-grid .doc-table tr:first-child td{background:#dbeafe;border-bottom-width:2px}.word-page.live-mode.table-style-light-grid .doc-table td{border-left-color:transparent;border-right-color:transparent}.word-page.live-mode.bold-table-header .doc-table tr:first-child .preview-run{font-weight:700!important}.word-page.live-mode.repeat-table-header .repeat-header-badge{display:inline-block}.word-page.live-mode.convert-captions .caption-field-badge{display:inline-block}.word-page.live-mode.show-front-fields .front-fields{display:block}.word-page.live-mode.has-page-border{outline-style:solid;outline-offset:-8px}.word-page.live-mode .page-header-preview.visible,.word-page.live-mode .page-footer-preview.visible{display:block}.word-page.live-mode.show-page-number .page-number-preview{display:inline}.empty-preview{padding:30px;text-align:center;color:#64748b}
+@media(max-width:1120px){.app-layout{grid-template-columns:1fr}.preview-card{position:static}.preview-shell{height:760px}.controls-column{order:1}.preview-column{order:0}}@media(max-width:650px){.control-grid,.check-grid{grid-template-columns:1fr}.preview-shell{padding:12px}.app-layout{padding:0 8px}.word-page{min-width:620px}}
+</style>
+</head>
+<body>
+{% set normal = report.styles.get('Normal') or {} %}
+{% set title_style = report.styles.get('Title') or {} %}
+{% set h1_style = report.styles.get('Heading 1') or {} %}
+{% set h2_style = report.styles.get('Heading 2') or {} %}
+{% set h3_style = report.styles.get('Heading 3') or {} %}
+{% set caption_style = report.styles.get('Caption') or {} %}
+{% set sec = report.sections[0] if report.sections else {} %}
+<header>
+  <div><a href="/formatting">← Analyse another document</a><h1>Formatting & Caption Studio</h1><div class="file-name">{{ job.original_filename }}</div></div>
+  <div class="file-name">Live Word-style preview</div>
+</header>
+<main class="app-layout">
+  <section class="controls-column">
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <section class="card">
+      <h2>Detected document</h2>
+      <div class="stats"><span class="pill">{{ report.paragraph_count }} paragraphs</span><span class="pill">{{ report.table_count }} tables</span><span class="pill">{{ report.section_count }} sections</span><span class="pill">{{ report.manual_caption_count }} manual captions</span></div>
+      <div class="compact-report" style="margin-top:10px"><strong>Common fonts:</strong> {% for x in report.top_fonts[:4] %}{{ x[0] }}{% if not loop.last %}, {% endif %}{% else %}inherited from styles{% endfor %}<br><strong>Common sizes:</strong> {% for x in report.top_sizes[:4] %}{{ x[0] }} pt{% if not loop.last %}, {% endif %}{% else %}inherited from styles{% endfor %}</div>
+    </section>
+
+    <form id="formattingForm" method="post" action="/formatting/apply/{{ job.job_id }}">
+      <section class="card">
+        <h2>Typography and styles</h2>
+        <div class="control-grid">
+          <div class="control"><label for="body_font">Body font</label><input id="body_font" name="body_font" value="{{ normal.name or (report.top_fonts[0][0] if report.top_fonts else 'Arial') }}"></div>
+          <div class="control"><label for="body_size">Body size</label><input id="body_size" name="body_size" type="number" step="0.5" min="6" max="40" value="{{ normal.size_pt or (report.top_sizes[0][0] if report.top_sizes else 11) }}"></div>
+          <div class="control"><label for="body_color">Body colour</label><input id="body_color" name="body_color" type="color" value="#{{ normal.color or '000000' }}"></div>
+          <div class="control"><label for="heading_font">Heading font</label><input id="heading_font" name="heading_font" value="{{ h1_style.name or normal.name or 'Arial' }}"></div>
+          <div class="control"><label for="heading_color">Heading colour</label><input id="heading_color" name="heading_color" type="color" value="#{{ h1_style.color or '1F4E79' }}"></div>
+          <div class="control"><label for="title_size">Title size</label><input id="title_size" name="title_size" type="number" step="0.5" min="8" max="72" value="{{ title_style.size_pt or 22 }}"></div>
+          <div class="control"><label for="h1_size">Heading 1 size</label><input id="h1_size" name="h1_size" type="number" step="0.5" min="8" max="54" value="{{ h1_style.size_pt or 16 }}"></div>
+          <div class="control"><label for="h2_size">Heading 2 size</label><input id="h2_size" name="h2_size" type="number" step="0.5" min="8" max="48" value="{{ h2_style.size_pt or 14 }}"></div>
+          <div class="control"><label for="h3_size">Heading 3 size</label><input id="h3_size" name="h3_size" type="number" step="0.5" min="8" max="42" value="{{ h3_style.size_pt or 12 }}"></div>
+          <div class="control"><label for="caption_font">Caption font</label><input id="caption_font" name="caption_font" value="{{ caption_style.name or normal.name or 'Arial' }}"></div>
+          <div class="control"><label for="caption_size">Caption size</label><input id="caption_size" name="caption_size" type="number" step="0.5" min="6" max="30" value="{{ caption_style.size_pt or 10 }}"></div>
+          <div class="control"><label for="caption_color">Caption colour</label><input id="caption_color" name="caption_color" type="color" value="#{{ caption_style.color or '404040' }}"></div>
+          <div class="control"><label for="line_spacing">Line spacing</label><select id="line_spacing" name="line_spacing"><option value="1">Single</option><option value="1.15" selected>1.15</option><option value="1.5">1.5</option><option value="2">Double</option></select></div>
+          <div class="control"><label for="space_after">Space after paragraphs (pt)</label><input id="space_after" name="space_after" type="number" step="1" min="0" max="72" value="6"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Page setup</h2>
+        <div class="control-grid">
+          <div class="control"><label for="page_size">Page size</label><select id="page_size" name="page_size"><option value="a4" {% if (sec.width_inches|default(8.27)) < 8.4 %}selected{% endif %}>A4</option><option value="letter" {% if (sec.width_inches|default(8.27)) >= 8.4 %}selected{% endif %}>Letter</option></select></div>
+          <div class="control"><label for="orientation">Orientation</label><select id="orientation" name="orientation"><option value="portrait" {% if sec.orientation|default('portrait') == 'portrait' %}selected{% endif %}>Portrait</option><option value="landscape" {% if sec.orientation|default('portrait') == 'landscape' %}selected{% endif %}>Landscape</option></select></div>
+          <div class="control"><label for="margin_top">Top margin (inches)</label><input id="margin_top" name="margin_top" type="number" step="0.1" min="0.2" max="3" value="{{ sec.top_margin|default(1) }}"></div>
+          <div class="control"><label for="margin_bottom">Bottom margin</label><input id="margin_bottom" name="margin_bottom" type="number" step="0.1" min="0.2" max="3" value="{{ sec.bottom_margin|default(1) }}"></div>
+          <div class="control"><label for="margin_left">Left margin</label><input id="margin_left" name="margin_left" type="number" step="0.1" min="0.2" max="3" value="{{ sec.left_margin|default(1) }}"></div>
+          <div class="control"><label for="margin_right">Right margin</label><input id="margin_right" name="margin_right" type="number" step="0.1" min="0.2" max="3" value="{{ sec.right_margin|default(1) }}"></div>
+          <div class="control wide"><label for="header_text">Header text</label><input id="header_text" name="header_text" placeholder="Optional header"></div>
+          <div class="control wide"><label for="footer_text">Footer text</label><input id="footer_text" name="footer_text" placeholder="Optional footer"></div>
+          <div class="control"><label for="page_border_color">Page border colour</label><input id="page_border_color" name="page_border_color" type="color" value="#808080"></div>
+          <div class="control"><label for="page_border_size">Page border width</label><input id="page_border_size" name="page_border_size" type="number" min="2" max="24" value="8"></div>
+        </div>
+        <div class="check-grid" style="margin-top:10px"><label><input id="page_border" type="checkbox" name="page_border">Add page border</label><label><input id="different_first_page" type="checkbox" name="different_first_page">Different first-page header/footer</label></div>
+      </section>
+
+      <section class="card">
+        <h2>Tables, captions and Word fields</h2>
+        <div class="control-grid">
+          <div class="control"><label for="table_font">Table font</label><input id="table_font" name="table_font" value="{{ normal.name or 'Arial' }}"></div>
+          <div class="control"><label for="table_size">Table size</label><input id="table_size" name="table_size" type="number" step="0.5" min="6" max="30" value="10"></div>
+          <div class="control wide"><label for="table_style">Table style</label><select id="table_style" name="table_style"><option value="Table Grid">Table Grid</option><option value="Light Shading Accent 1">Light Shading Accent 1</option><option value="Light Grid Accent 1">Light Grid Accent 1</option></select></div>
+          <div class="control"><label for="table_border_color">Table border colour</label><input id="table_border_color" name="table_border_color" type="color" value="#808080"></div>
+          <div class="control"><label for="table_border_size">Table border width</label><input id="table_border_size" name="table_border_size" type="number" min="2" max="24" value="4"></div>
+        </div>
+        <div class="check-grid" style="margin-top:10px">
+          <label><input id="repeat_header" type="checkbox" name="repeat_header" checked>Repeat table header rows</label>
+          <label><input id="bold_table_header" type="checkbox" name="bold_table_header" checked>Bold table header rows</label>
+          <label><input id="convert_captions" type="checkbox" name="convert_captions" checked>Convert Figure/Table captions to Word SEQ fields</label>
+          <label><input id="page_numbers" type="checkbox" name="page_numbers" checked>Add page numbers</label>
+          <label><input id="add_toc" type="checkbox" name="add_toc">Add Table of Contents</label>
+          <label><input id="add_lof" type="checkbox" name="add_lof">Add List of Figures</label>
+          <label><input id="add_lot" type="checkbox" name="add_lot">Add List of Tables</label>
+        </div>
+      </section>
+
+      <div class="action-bar"><button type="button" class="secondary" id="resetControls">Reset</button><button type="submit" class="primary">Apply Formatting and Generate DOCX</button></div>
+    </form>
+  </section>
+
+  <aside class="preview-column">
+    <section class="preview-card">
+      <div class="preview-toolbar">
+        <div><strong>Document preview</strong> <span class="pill" id="previewStatus">Live changes</span></div>
+        <div class="toolbar-group">
+          <button type="button" class="toolbar-btn" id="originalView">Original</button>
+          <button type="button" class="toolbar-btn active" id="liveView">Live formatted</button>
+          <button type="button" class="toolbar-btn" id="fitWidth">Fit width</button>
+          <label class="zoom-control">Zoom <input id="previewZoom" type="range" min="45" max="130" value="85"><span id="zoomValue">85%</span></label>
+        </div>
+      </div>
+      <div class="preview-note">This is a close browser rendering of the DOCX. Word may paginate fields, images, floating objects and section breaks differently. The generated DOCX remains the authoritative output.</div>
+      <div class="preview-shell" id="previewShell">
+        <article class="word-page live-mode" id="wordPage"
+          data-original-width="{{ ((preview.page.page_width_pt|default(612)) * 1.05)|round|int }}"
+          data-original-height="{{ ((preview.page.page_height_pt|default(792)) * 1.05)|round|int }}"
+          data-original-padding-top="{{ ((preview.page.margin_top_pt|default(72)) * 1.05)|round|int }}"
+          data-original-padding-bottom="{{ ((preview.page.margin_bottom_pt|default(72)) * 1.05)|round|int }}"
+          data-original-padding-left="{{ ((preview.page.margin_left_pt|default(72)) * 1.05)|round|int }}"
+          data-original-padding-right="{{ ((preview.page.margin_right_pt|default(72)) * 1.05)|round|int }}">
+          <div class="page-header-preview" id="pageHeaderPreview"></div>
+          <div class="page-footer-preview" id="pageFooterPreview"><span id="footerTextPreview"></span><span class="page-number-preview" id="pageNumberPreview">Page 1</span></div>
+          <div class="document-content" id="documentContent">
+            <div class="front-fields" id="frontFields">
+              <div class="front-field" id="tocPreview"><h2>Table of Contents</h2><p>Word TOC field — headings 1–3 will populate when fields update.</p></div>
+              <div class="front-field" id="lofPreview"><h2>List of Figures</h2><p>Word field — converted Figure captions will populate this list.</p></div>
+              <div class="front-field" id="lotPreview"><h2>List of Tables</h2><p>Word field — converted Table captions will populate this list.</p></div>
+            </div>
+            {% for b in preview.blocks %}
+              {% if b.type == 'paragraph' %}
+                {% set p = b.visual %}
+                {% set sl = (p.style or 'Normal')|lower %}
+                {% if sl == 'title' %}{% set kind='title' %}{% elif sl.startswith('heading 1') %}{% set kind='h1' %}{% elif sl.startswith('heading 2') %}{% set kind='h2' %}{% elif sl.startswith('heading 3') %}{% set kind='h3' %}{% elif b.is_caption %}{% set kind='caption' %}{% else %}{% set kind='body' %}{% endif %}
+                <p class="doc-paragraph preview-{{ kind }}" data-style-name="{{ p.style|e }}" data-kind="{{ kind }}" style="text-align:{{ p.alignment }};margin-left:{{ p.left_indent_pt }}pt;text-indent:{{ p.first_line_indent_pt }}pt">
+                  {% if p.list_item %}<span class="list-prefix">•</span>{% endif %}
+                  {% for r in p.runs %}<span class="preview-run" style="{% if r.font_name %}font-family:'{{ r.font_name|e }}';{% endif %}{% if r.font_size_pt %}font-size:{{ r.font_size_pt }}pt;{% endif %}{% if r.bold %}font-weight:700;{% endif %}{% if r.italic %}font-style:italic;{% endif %}{% if r.underline %}text-decoration:underline;{% endif %}{% if r.colour %}color:#{{ r.colour }};{% endif %}">{{ r.text }}</span>{% endfor %}
+                  {% if b.is_caption %}<span class="caption-field-badge">SEQ field</span>{% endif %}
+                </p>
+              {% else %}
+                <table class="doc-table"><tbody>
+                {% for row in b.rendered_rows %}<tr>{% for cell in row.cells %}<td>{% if row.row_index == 0 and loop.last %}<span class="repeat-header-badge">repeats</span>{% endif %}{% for p in cell.paragraphs %}<p class="doc-paragraph preview-body" style="text-align:{{ p.alignment }};margin-left:{{ p.left_indent_pt }}pt;text-indent:{{ p.first_line_indent_pt }}pt">{% if p.list_item %}<span class="list-prefix">•</span>{% endif %}{% for r in p.runs %}<span class="preview-run" style="{% if r.font_name %}font-family:'{{ r.font_name|e }}';{% endif %}{% if r.font_size_pt %}font-size:{{ r.font_size_pt }}pt;{% endif %}{% if r.bold %}font-weight:700;{% endif %}{% if r.italic %}font-style:italic;{% endif %}{% if r.underline %}text-decoration:underline;{% endif %}{% if r.colour %}color:#{{ r.colour }};{% endif %}">{{ r.text }}</span>{% endfor %}</p>{% endfor %}</td>{% endfor %}</tr>{% endfor %}
+                </tbody></table>
+              {% endif %}
+            {% else %}<div class="empty-preview">No previewable document text was found.</div>{% endfor %}
+          </div>
+        </article>
+      </div>
+    </section>
+  </aside>
+</main>
+<script>
+(() => {
+  const form = document.getElementById('formattingForm');
+  const page = document.getElementById('wordPage');
+  const shell = document.getElementById('previewShell');
+  const originalButton = document.getElementById('originalView');
+  const liveButton = document.getElementById('liveView');
+  const status = document.getElementById('previewStatus');
+  const zoom = document.getElementById('previewZoom');
+  const zoomValue = document.getElementById('zoomValue');
+  const pageHeader = document.getElementById('pageHeaderPreview');
+  const pageFooter = document.getElementById('pageFooterPreview');
+  const footerText = document.getElementById('footerTextPreview');
+  const fields = ['body_font','body_size','body_color','heading_font','heading_color','title_size','h1_size','h2_size','h3_size','caption_font','caption_size','caption_color','line_spacing','space_after','page_size','orientation','margin_top','margin_bottom','margin_left','margin_right','header_text','footer_text','page_border_color','page_border_size','table_font','table_size','table_style','table_border_color','table_border_size','page_border','different_first_page','repeat_header','bold_table_header','convert_captions','page_numbers','add_toc','add_lof','add_lot'];
+  const input = id => document.getElementById(id);
+  const val = (id, fallback='') => input(id)?.value || fallback;
+  const checked = id => Boolean(input(id)?.checked);
+  let mode = 'live';
+
+  function numeric(id, fallback){ const n = Number.parseFloat(val(id)); return Number.isFinite(n) ? n : fallback; }
+  function setVar(name, value){ page.style.setProperty(name, value); }
+  function selectMode(next){
+    mode = next;
+    const live = next === 'live';
+    page.classList.toggle('live-mode', live);
+    page.classList.toggle('original-mode', !live);
+    originalButton.classList.toggle('active', !live);
+    liveButton.classList.toggle('active', live);
+    status.textContent = live ? 'Live changes' : 'Original document';
+    if (live) updatePreview(); else restoreOriginalPage();
+  }
+
+  function restoreOriginalPage(){
+    page.style.width = `${page.dataset.originalWidth}px`;
+    page.style.minHeight = `${page.dataset.originalHeight}px`;
+    page.style.paddingTop = `${page.dataset.originalPaddingTop}px`;
+    page.style.paddingBottom = `${page.dataset.originalPaddingBottom}px`;
+    page.style.paddingLeft = `${page.dataset.originalPaddingLeft}px`;
+    page.style.paddingRight = `${page.dataset.originalPaddingRight}px`;
+    page.style.outlineColor = 'transparent';
+    page.style.outlineWidth = '0';
+    pageHeader.classList.remove('visible');
+    pageFooter.classList.remove('visible');
+    document.getElementById('frontFields').style.display = 'none';
+  }
+
+  function updatePreview(){
+    if (mode !== 'live') return;
+    setVar('--body-font', `'${val('body_font','Arial').replaceAll("'", '')}'`);
+    setVar('--body-size', `${numeric('body_size',11)}pt`);
+    setVar('--body-color', val('body_color','#000000'));
+    setVar('--heading-font', `'${val('heading_font','Arial').replaceAll("'", '')}'`);
+    setVar('--title-font', `'${val('body_font','Arial').replaceAll("'", '')}'`);
+    setVar('--heading-color', val('heading_color','#1f4e79'));
+    setVar('--title-size', `${numeric('title_size',22)}pt`);
+    setVar('--h1-size', `${numeric('h1_size',16)}pt`);
+    setVar('--h2-size', `${numeric('h2_size',14)}pt`);
+    setVar('--h3-size', `${numeric('h3_size',12)}pt`);
+    setVar('--caption-font', `'${val('caption_font','Arial').replaceAll("'", '')}'`);
+    setVar('--caption-size', `${numeric('caption_size',10)}pt`);
+    setVar('--caption-color', val('caption_color','#404040'));
+    setVar('--line-spacing', String(numeric('line_spacing',1.15)));
+    setVar('--space-after', `${numeric('space_after',6)}pt`);
+    setVar('--table-font', `'${val('table_font','Arial').replaceAll("'", '')}'`);
+    setVar('--table-size', `${numeric('table_size',10)}pt`);
+    setVar('--table-border-color', val('table_border_color','#808080'));
+    setVar('--table-border-width', `${Math.max(1,numeric('table_border_size',4)/4)}px`);
+
+    const isLetter = val('page_size','a4') === 'letter';
+    let widthPt = isLetter ? 612 : 595.44;
+    let heightPt = isLetter ? 792 : 841.68;
+    if (val('orientation','portrait') === 'landscape') [widthPt,heightPt] = [heightPt,widthPt];
+    const scale = 1.05;
+    page.style.width = `${Math.round(widthPt*scale)}px`;
+    page.style.minHeight = `${Math.round(heightPt*scale)}px`;
+    page.style.paddingTop = `${numeric('margin_top',1)*72*scale}px`;
+    page.style.paddingBottom = `${numeric('margin_bottom',1)*72*scale}px`;
+    page.style.paddingLeft = `${numeric('margin_left',1)*72*scale}px`;
+    page.style.paddingRight = `${numeric('margin_right',1)*72*scale}px`;
+
+    page.classList.toggle('has-page-border', checked('page_border'));
+    page.style.outlineColor = checked('page_border') ? val('page_border_color','#808080') : 'transparent';
+    page.style.outlineWidth = checked('page_border') ? `${Math.max(1,numeric('page_border_size',8)/2)}px` : '0';
+    page.classList.toggle('bold-table-header', checked('bold_table_header'));
+    page.classList.toggle('repeat-table-header', checked('repeat_header'));
+    page.classList.toggle('convert-captions', checked('convert_captions'));
+    page.classList.toggle('show-page-number', checked('page_numbers'));
+    page.classList.remove('table-style-light-shading','table-style-light-grid');
+    if (val('table_style') === 'Light Shading Accent 1') page.classList.add('table-style-light-shading');
+    if (val('table_style') === 'Light Grid Accent 1') page.classList.add('table-style-light-grid');
+
+    pageHeader.textContent = val('header_text').trim();
+    footerText.textContent = val('footer_text').trim();
+    pageHeader.classList.toggle('visible', Boolean(pageHeader.textContent));
+    pageFooter.classList.toggle('visible', Boolean(footerText.textContent) || checked('page_numbers'));
+    document.getElementById('tocPreview').style.display = checked('add_toc') ? 'block' : 'none';
+    document.getElementById('lofPreview').style.display = checked('add_lof') ? 'block' : 'none';
+    document.getElementById('lotPreview').style.display = checked('add_lot') ? 'block' : 'none';
+    const anyField = checked('add_toc') || checked('add_lof') || checked('add_lot');
+    document.getElementById('frontFields').style.display = anyField ? 'block' : 'none';
+  }
+
+  function applyZoom(){ page.style.zoom = `${Number(zoom.value)/100}`; zoomValue.textContent = `${zoom.value}%`; }
+  function fitWidth(){
+    page.style.zoom = '1';
+    const available = Math.max(300, shell.clientWidth - 64);
+    const natural = page.offsetWidth;
+    const pct = Math.max(45, Math.min(130, Math.floor((available/natural)*100)));
+    zoom.value = String(pct); applyZoom();
+  }
+
+  fields.forEach(id => {
+    const element = input(id);
+    if (!element) return;
+    element.addEventListener('input', () => { if(mode !== 'live') selectMode('live'); updatePreview(); });
+    element.addEventListener('change', () => { if(mode !== 'live') selectMode('live'); updatePreview(); });
+  });
+  originalButton.addEventListener('click', () => selectMode('original'));
+  liveButton.addEventListener('click', () => selectMode('live'));
+  zoom.addEventListener('input', applyZoom);
+  document.getElementById('fitWidth').addEventListener('click', fitWidth);
+  document.getElementById('resetControls').addEventListener('click', () => { form.reset(); selectMode('live'); updatePreview(); setTimeout(fitWidth,0); });
+  window.addEventListener('resize', () => { if (window.innerWidth < 1120) fitWidth(); });
+  updatePreview(); applyZoom(); setTimeout(fitWidth,60);
+})();
+</script>
+</body>
+</html>

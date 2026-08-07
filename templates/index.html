@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIREM v21 Document Studio</title>
+  <style>
+    :root{font-family:Inter,Arial,sans-serif;color:#172033;background:#f4f6fb}*{box-sizing:border-box}body{margin:0}.hero{background:#111827;color:#fff;padding:44px 24px}.hero-inner{max-width:1180px;margin:auto}.eyebrow{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#93c5fd;font-weight:800}.hero h1{font-size:42px;margin:10px 0 12px}.hero p{max-width:820px;color:#d1d5db;font-size:18px;line-height:1.55}.wrap{max-width:1180px;margin:30px auto;padding:0 20px 50px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:24px;box-shadow:0 8px 28px rgba(15,23,42,.06)}.card h2{margin:0 0 10px;font-size:23px}.card p{color:#4b5563;line-height:1.55;min-height:72px}.tag{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;margin-bottom:14px}.button{display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:12px 16px;border-radius:9px;font-weight:800}.button.blue{background:#1d4ed8}.button.green{background:#047857}.button.purple{background:#6d28d9}.status{margin-top:24px;background:#fff;border-left:5px solid #1d4ed8;padding:18px 20px;border-radius:12px;color:#374151}.status strong{color:#111827}@media(max-width:800px){.grid{grid-template-columns:1fr}.hero h1{font-size:32px}}
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">AIREM v21</div>
+      <h1>Document Rewrite and Formatting Studio</h1>
+      <p>Choose the workflow you need. The core rewriter now uses a pure linguistic V12-inspired pipeline with protected-content isolation, deterministic lexical and sentence restructuring, post-rewrite compression and unlimited manual rewrite cycles. Turnitin mapping, optional OpenAI range editing, pasted-text rewriting, detection and DOCX formatting remain separate tools.</p>
+    </div>
+  </section>
+  <main class="wrap">
+    <div class="grid">
+      <section class="card">
+        <span class="tag">DOCX REWRITE</span>
+        <h2>Rewrite a Word document</h2>
+        <p>Upload a DOCX, select or map the ranges you need, then use the pure linguistic rewriter. Numerical data, dates, names, citations and technical terms are isolated before rewriting, and compression controls word-count growth.</p>
+        <a class="button blue" href="/document-rewriter">Open Word Rewriter</a>
+      </section>
+      <section class="card">
+        <span class="tag">COPY AND PASTE</span>
+        <h2>Rewrite pasted text</h2>
+        <p>Paste text directly, choose Natural Student, Simple Student, Natural Academic or Plain Professional style, protect extra terminology if needed, rewrite repeatedly without a cycle limit, and copy the result.</p>
+        <a class="button purple" href="/text-rewriter">Open Text Rewriter</a>
+      </section>
+      <section class="card">
+        <span class="tag">RANGE CONTROL</span>
+        <h2>Select document content</h2>
+        <p>The Word Rewriter supports automatic selection, block ranges, manual multi-ranges and verified Turnitin highlight mapping, including one-click expansion to full paragraphs or tables.</p>
+        <a class="button" href="/document-rewriter">Upload and Select Range</a>
+      </section>
+      <section class="card">
+        <span class="tag">DETECTION ONLY</span>
+        <h2>Analyse text or a document</h2>
+        <p>Paste text or upload a DOCX/TXT file to receive the new V3 pattern score, confidence, component breakdown and the highest-risk passages.</p>
+        <a class="button" style="background:#b45309" href="/detector">Open Detection Studio</a>
+      </section>
+      <section class="card">
+        <span class="tag">DOCX FORMATTING</span>
+        <h2>Format and caption a document</h2>
+        <p>Audit existing styles, then change fonts, headings, margins, orientation, tables, captions, page numbers, Table of Contents, List of Figures and List of Tables.</p>
+        <a class="button green" href="/formatting">Open Formatting Studio</a>
+      </section>
+    </div>
+    <div class="status"><strong>v21 rewrite update:</strong> The normal AIREM rewrite algorithm loads no ML models. The OpenAI range editor remains an optional, separate manual-edit workflow and is never called by the linguistic rewrite engine.</div>
+  </main>
+</body>
+</html>

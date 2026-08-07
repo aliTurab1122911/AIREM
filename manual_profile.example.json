@@ -1,0 +1,18 @@
+{
+  "target_change_percent": -2,
+  "length_tolerance": 7,
+  "compression_intensity": 70,
+  "lexical_intensity": 70,
+  "connector_intensity": 70,
+  "contraction_intensity": 0,
+  "table_intensity": 30,
+  "max_cumulative_increase": 5,
+  "content_preservation": 72,
+  "table_preservation": 86,
+  "candidate_count": 12,
+  "sentence_count_tolerance": 1,
+  "max_sentence_words": 34,
+  "max_cycles": 2,
+  "preserve_sentence_count": false,
+  "split_long_sentences": true
+}

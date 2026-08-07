@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIREM v19 Word Rewriter Workspace</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color: #1f2937; }
+    body { margin: 0; background: #f6f7fb; }
+    header { background: #111827; color: white; padding: 18px 28px; }
+    main { max-width: 1200px; margin: 24px auto; padding: 0 18px 40px; }
+    .card { background: white; border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 6px 22px rgba(0,0,0,.06); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    textarea { width: 100%; min-height: 360px; padding: 12px; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 8px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.45; white-space: pre; }
+    textarea[readonly] { background: #f9fafb; }
+    button, .button { display: inline-block; padding: 10px 14px; border: 0; background: #111827; color: white; border-radius: 8px; font-weight: 700; cursor: pointer; text-decoration: none; }
+    button.secondary, .button.secondary { background: #374151; }
+    button.success { background: #047857; }
+    button.cycle { background: #6d28d9; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 14px; }
+    label.control { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 14px; }
+    select { padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 8px; min-width: 160px; }
+    label.checkbox { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; padding-bottom: 10px; }
+    .manual-panel { display: none; margin-top: 18px; border: 1px solid #dbe3ef; border-radius: 12px; background: #f8fafc; padding: 18px; }
+    .manual-panel.active { display: block; }
+    .manual-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 15px 22px; }
+    .slider-control { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; }
+    .slider-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+    .slider-value { min-width: 48px; text-align: right; color: #4338ca; }
+    input[type=range] { width: 100%; accent-color: #4f46e5; }
+    .manual-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    .manual-actions button { background: #4b5563; padding: 8px 11px; font-size: 13px; }
+    .locked { background: #eef2ff; border: 1px solid #c7d2fe; padding: 12px; border-radius: 9px; margin-top: 14px; font-size: 13px; }
+    .meta { color: #4b5563; font-size: 14px; }
+    .pill { display: inline-block; background: #eef2ff; border: 1px solid #c7d2fe; padding: 5px 9px; border-radius: 999px; margin: 2px; font-size: 13px; }
+    .warn { background: #fffbeb; border: 1px solid #fde68a; padding: 12px; border-radius: 8px; }
+    .error { background: #fee2e2; border: 1px solid #fecaca; padding: 12px; border-radius: 8px; color: #991b1b; }
+    .ok { background: #ecfdf5; border: 1px solid #a7f3d0; padding: 12px; border-radius: 8px; color: #065f46; }
+    pre { white-space: pre-wrap; background: #f3f4f6; padding: 12px; border-radius: 8px; overflow-x: auto; }
+    .score-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 14px; margin: 14px 0; }
+    .score-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; background: #fafafa; }
+    .score-label { color: #4b5563; font-size: 13px; font-weight: 700; }
+    .score-number { font-size: 32px; font-weight: 800; margin: 4px 0 8px; }
+    .score-track { height: 11px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .score-fill { height: 100%; width: 0; background: linear-gradient(90deg, #059669, #d97706, #b91c1c); transition: width .35s ease; }
+    .score-detail { color: #6b7280; font-size: 12px; margin-top: 7px; }
+    .score-history { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .history-chip { border: 1px solid #d1d5db; background: white; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+    .score-note { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 9px; padding: 10px; color: #1e3a8a; font-size: 13px; }
+    @media (max-width: 900px) { .grid, .manual-grid, .score-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="margin-bottom:8px"><a href="/" style="color:#bfdbfe">← AIREM Studio</a> &nbsp; <a href="/document-rewriter" style="color:#bfdbfe">New document</a> &nbsp; <a href="/text-rewriter" style="color:#bfdbfe">Paste text</a> &nbsp; <a href="/formatting" style="color:#bfdbfe">Formatting</a></div>
+    <h1>AIREM v19 Word Rewriter Workspace</h1>
+    <div>File: {{ job.original_filename }}</div>
+  </header>
+  <main>
+    <section class="card">
+      <span class="pill">{{ mapping.section_count }} sections</span>
+      <span class="pill">{{ mapping.chunk_count }} extract file(s)</span>
+      <span class="pill">Max {{ mapping.max_words_per_extract }} words per chunk</span>
+      <span class="pill">Selection: {{ mapping.selection.mode|default('automatic') }}</span>
+      {% if job.selected_block_count %}<span class="pill">{{ job.selected_block_count }} selected document blocks</span>{% endif %}
+      <span class="pill">Completed rewrite cycles: <strong id="cycleCount">{{ job.rewrite_cycle_count|default(0) }}</strong></span>
+      <span class="pill">Completed rewrite passes: <strong id="rewritePassCount">{{ job.rewrite_pass_count|default(0) }}</strong></span>
+      <p class="meta">Use a preset rewrite profile or select <strong>Manual controls</strong> to tune the style dimensions yourself. The internal engine preserves the <strong>|sec|</strong> structure and keeps fixed protections for citations, names, dates, numbers and currencies.</p>
+      {% if mapping.warnings %}
+        <div class="warn">
+          <strong>Warnings:</strong>
+          <ul>{% for w in mapping.warnings %}<li>Section {{ w.section_number }} has {{ w.word_count }} words. {{ w.message }}</li>{% endfor %}</ul>
+        </div>
+      {% endif %}
+      <p>
+        <a class="button secondary" href="{{ url_for('download_file', job_id=job.job_id, filename='logs/extraction_map.json') }}">Download extraction map</a>
+      </p>
+    </section>
+
+    <section class="card" id="scorePanel">
+      <h2 style="margin-top:0">V3 detection score</h2>
+      <p class="meta">The V3 experimental pattern ensemble evaluates wording, structural regularity, repetition, template language, lexical patterns and punctuation. It is used for rewrite comparison but does not prove authorship.</p>
+      <div class="score-grid">
+        <div class="score-card">
+          <div class="score-label">Initial text</div>
+          <div class="score-number" id="initialScore">—</div>
+          <div class="score-track"><div class="score-fill" id="initialScoreBar"></div></div>
+          <div class="score-detail" id="initialScoreDetail">Calculating local style profile…</div>
+        </div>
+        <div class="score-card">
+          <div class="score-label">Current rewritten text</div>
+          <div class="score-number" id="currentScore">—</div>
+          <div class="score-track"><div class="score-fill" id="currentScoreBar"></div></div>
+          <div class="score-detail" id="currentScoreDetail">Run a rewrite or paste edited text.</div>
+        </div>
+        <div class="score-card">
+          <div class="score-label">Change from initial</div>
+          <div class="score-number" id="scoreDelta">—</div>
+          <div class="score-detail" id="scoreDeltaDetail">The score may increase or decrease after any cycle.</div>
+        </div>
+      </div>
+      <button type="button" class="secondary" onclick="recalculateStyleScore()">Recalculate Current Style Score</button>
+      <div class="score-history" id="scoreHistory"></div>
+      <p class="score-note" id="scoreDisclaimer">Experimental writing-pattern diagnostic only; it is not an authorship probability.</p>
+    </section>
+
+    {% for chunk in mapping.chunks %}
+    <section class="card chunk" data-chunk="{{ chunk.chunk_number }}">
+      <h2>Extract Part {{ '%02d'|format(chunk.chunk_number) }}</h2>
+      <p class="meta">{{ chunk.word_count }} words · {{ chunk.section_count }} sections · Download: 
+        <a href="{{ url_for('download_file', job_id=job.job_id, filename='2_extract/' + chunk.extract_file) }}">{{ chunk.extract_file }}</a>
+      </p>
+      <div class="grid">
+        <div>
+          <h3>Extract text to copy</h3>
+          <button type="button" class="secondary" onclick="copyText('copy_{{ chunk.chunk_number }}')">Copy this extract</button>
+          <textarea id="copy_{{ chunk.chunk_number }}" readonly>{{ chunk.text }}</textarea>
+        </div>
+        <div>
+          <h3>Paste edited text here</h3>
+          <button type="button" class="secondary" onclick="clearText('edited_{{ chunk.chunk_number }}')">Clear</button>
+          <textarea id="edited_{{ chunk.chunk_number }}" class="edited" placeholder="Paste the edited Part {{ '%02d'|format(chunk.chunk_number) }} text here. Keep every |sec| divider.">{% if prefill_edited_texts %}{{ prefill_edited_texts.get(chunk.chunk_number, '') }}{% endif %}</textarea>
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+
+    <section class="card">
+      <div class="controls">
+        <label class="control">
+          Rewrite profile
+          <select id="rewriteProfile" onchange="toggleManualPanel()">
+            <option value="light">Light Rewrite — minimal change</option>
+            <option value="natural" selected>Natural Rewrite — strong linguistic rewrite</option>
+            <option value="rewrite_compress">Rewrite + Compress — stronger shortening</option>
+            <option value="compress">Compress Only — remove padding</option>
+            <option value="plain">Simple Student — shorter, simpler wording</option>
+            <option value="strong">Strong Rewrite — maximum safe restructuring</option>
+            <option value="manual">Manual Controls — custom linguistic settings</option>
+          </select>
+        </label>
+        <label class="control">
+          Rewrite engine
+          <select id="rewriteEngine">
+            <option value="linguistic" selected>Linguistic V1 — V12-inspired, no ML</option>
+            <option value="legacy">Legacy deterministic engine</option>
+          </select>
+        </label>
+        <label class="control" id="styleProfileControl">
+          Writing style
+          <select id="styleProfile">
+            <option value="natural_student" selected>Natural student</option>
+            <option value="simple_student">Simple student</option>
+            <option value="natural_academic">Natural academic</option>
+            <option value="plain_professional">Plain professional</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="contentFirstPanel" class="manual-panel" style="display:block">
+        <h3 style="margin-top:0">Linguistic rewrite pipeline</h3>
+        <p class="meta"><strong>No ML models are used by this rewriter.</strong> The engine first isolates protected facts and terminology, then applies V12-inspired lexical and sentence-structure transformations, and finally compresses the result back toward the source word count.</p>
+        <div class="locked"><strong>Always protected:</strong> numerical data, percentages, money, dates, citations, quotations, URLs/emails, equations/code identifiers, file names, units/measurements, acronyms, likely names/organisations and automatically detected repeated technical terms.</div>
+        <label class="control" style="margin-top:12px">Additional protected terms (optional)
+          <input id="protectedTerms" type="text" placeholder="e.g. Retrieval-Augmented Generation, FEVER, Task A1 — separate with commas or semicolons">
+        </label>
+        <p class="meta">Use this field for any course-specific phrase, model name, legal term, product name or technical expression that must remain byte-for-byte unchanged. The detection score shown elsewhere in AIREM is diagnostic only. It is not used to generate, rank, accept or roll back a rewrite.</p>
+      </div>
+
+      <div id="manualPanel" class="manual-panel">
+        <h3 style="margin-top:0">Manual linguistic and compression controls</h3>
+        <p class="meta">The original uploaded text remains the permanent word-count reference. Rewriting happens first; compression then controls growth. Unlimited rewrite cycles remain available.</p>
+        <div class="manual-actions">
+          <button type="button" onclick="applyManualPreset('natural')">Natural</button>
+          <button type="button" onclick="applyManualPreset('compact')">Rewrite + Compress</button>
+          <button type="button" onclick="applyManualPreset('light')">Light Rewrite</button>
+          <button type="button" onclick="resetManualSettings()">Reset defaults</button>
+        </div>
+        <div class="manual-grid">
+          <div class="slider-control">
+            <div class="slider-head"><span>Target word-count change</span><span class="slider-value" id="target_change_percent_value"></span></div>
+            <input id="target_change_percent" type="range" min="-35" max="0" step="1" value="-2" data-suffix="%">
+          </div>
+          <div class="slider-control">
+            <div class="slider-head"><span>Target flexibility</span><span class="slider-value" id="length_tolerance_value"></span></div>
+            <input id="length_tolerance" type="range" min="2" max="20" step="1" value="7" data-suffix="%">
+          </div>
+          <div class="slider-control">
+            <div class="slider-head"><span>Compression intensity</span><span class="slider-value" id="compression_intensity_value"></span></div>
+            <input id="compression_intensity" type="range" min="0" max="100" step="1" value="70" data-suffix="%">
+          </div>
+          <div class="slider-control">
+            <div class="slider-head"><span>Lexical simplification</span><span class="slider-value" id="lexical_intensity_value"></span></div>
+            <input id="lexical_intensity" type="range" min="0" max="100" step="1" value="70" data-suffix="%">
+          </div>
+
+          <div class="slider-control">
+            <div class="slider-head"><span>Contractions</span><span class="slider-value" id="contraction_intensity_value"></span></div>
+            <input id="contraction_intensity" type="range" min="0" max="100" step="1" value="0" data-suffix="%">
+          </div>
+
+
+          <div class="slider-control">
+            <div class="slider-head"><span>Prose content preservation</span><span class="slider-value" id="content_preservation_value"></span></div>
+            <input id="content_preservation" type="range" min="60" max="100" step="1" value="72" data-suffix="%">
+          </div>
+          <div class="slider-control">
+            <div class="slider-head"><span>Table content preservation</span><span class="slider-value" id="table_preservation_value"></span></div>
+            <input id="table_preservation" type="range" min="72" max="100" step="1" value="86" data-suffix="%">
+          </div>
+
+          <div class="slider-control">
+            <div class="slider-head"><span>Long-sentence threshold</span><span class="slider-value" id="max_sentence_words_value"></span></div>
+            <input id="max_sentence_words" type="range" min="20" max="80" step="1" value="34" data-suffix=" words">
+          </div>
+
+          <div class="slider-control">
+            <label class="checkbox"><input id="split_long_sentences" type="checkbox" checked> Split overly long sentences when safe</label>
+          </div>
+        </div>
+        <div class="locked"><strong>Locked safeguards:</strong> protected facts/technical terms, document structure, duplicate removal and prompt-leak rejection cannot be disabled. There is no detection-based rollback.</div>
+      </div>
+
+      <button type="button" id="rewriteButton" onclick="rewriteAll()">Run Selected Rewrite Profile</button>
+      <button type="button" id="cycleButton" class="cycle" onclick="cycleRewrite()">Rewrite Current Text Again</button>
+      <button type="button" onclick="validateAll()">Validate Edited Text</button>
+      <button type="button" class="success" onclick="reinsertAll()">Reinsert and Generate Final DOCX</button>
+      <p class="meta"><strong>Rewrite Current Text Again</strong> has no cycle limit. Each pass rewrites the current text with a different deterministic variation, then compresses it again. There is <strong>no detection or quality rollback</strong>; only factual/technical and reinsertion-structure safeguards can stop a pass.</p>
+      <div id="result" style="margin-top:18px;"></div>
+    </section>
+  </main>
+
+<script>
+const jobId = {{ job.job_id|tojson }};
+const chunkNumbers = [{% for chunk in mapping.chunks %}{{ chunk.chunk_number }}{% if not loop.last %},{% endif %}{% endfor %}];
+const manualSliderIds = [
+  'target_change_percent', 'length_tolerance', 'compression_intensity',
+  'lexical_intensity', 'contraction_intensity', 'content_preservation',
+  'table_preservation', 'max_sentence_words'
+];
+const manualDefaults = {
+  target_change_percent: -2, length_tolerance: 7, compression_intensity: 70,
+  lexical_intensity: 78, contraction_intensity: 0, content_preservation: 70,
+  table_preservation: 90, max_sentence_words: 28,
+  split_long_sentences: true
+};
+const manualPresets = {
+  natural: {...manualDefaults},
+  compact: {...manualDefaults, target_change_percent: -10, compression_intensity: 100, lexical_intensity: 88, content_preservation: 68, table_preservation: 90, max_sentence_words: 24},
+  light: {...manualDefaults, target_change_percent: 0, compression_intensity: 35, lexical_intensity: 45, content_preservation: 82, table_preservation: 94, max_sentence_words: 34}
+};
+
+function updateSliderValue(id) {
+  const input = document.getElementById(id);
+  const label = document.getElementById(`${id}_value`);
+  if (!input || !label) return;
+  label.textContent = `${input.value}${input.dataset.suffix || ''}`;
+}
+function collectManualSettings() {
+  const settings = {};
+  for (const id of manualSliderIds) settings[id] = Number(document.getElementById(id).value);
+  settings.split_long_sentences = document.getElementById('split_long_sentences').checked;
+  return settings;
+}
+function setManualSettings(settings) {
+  for (const id of manualSliderIds) {
+    if (settings[id] !== undefined) document.getElementById(id).value = settings[id];
+    updateSliderValue(id);
+  }
+  document.getElementById('split_long_sentences').checked = settings.split_long_sentences === true;
+  localStorage.setItem('airemManualSettingsV19', JSON.stringify(collectManualSettings()));
+}
+function applyManualPreset(name) { setManualSettings(manualPresets[name] || manualDefaults); }
+function resetManualSettings() { setManualSettings(manualDefaults); }
+function toggleManualPanel() {
+  const isManual = document.getElementById('rewriteProfile').value === 'manual';
+  document.getElementById('manualPanel').classList.toggle('active', isManual);
+}
+function initialiseManualControls() {
+  for (const id of manualSliderIds) {
+    document.getElementById(id).addEventListener('input', () => {
+      updateSliderValue(id);
+      localStorage.setItem('airemManualSettingsV19', JSON.stringify(collectManualSettings()));
+    });
+  }
+  for (const id of ['split_long_sentences']) {
+    document.getElementById(id).addEventListener('change', () => localStorage.setItem('airemManualSettingsV19', JSON.stringify(collectManualSettings())));
+  }
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem('airemManualSettingsV19')); } catch (_) {}
+  setManualSettings(stored || manualDefaults);
+  toggleManualPanel();
+}
+
+function setScoreDisplay(numberId, barId, value) {
+  const number = document.getElementById(numberId);
+  const bar = document.getElementById(barId);
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    number.textContent = '—';
+    if (bar) bar.style.width = '0%';
+    return;
+  }
+  const bounded = Math.max(0, Math.min(100, Number(value)));
+  number.textContent = `${bounded.toFixed(1)}%`;
+  if (bar) bar.style.width = `${bounded}%`;
+}
+
+function renderStyleScores(scores) {
+  if (!scores) return;
+  const initial = scores.initial || null;
+  const current = scores.current || null;
+  if (initial) {
+    setScoreDisplay('initialScore', 'initialScoreBar', initial.ai_style_score);
+    document.getElementById('initialScoreDetail').textContent = `${initial.word_count} words · sample confidence ${initial.confidence}%`;
+  }
+  if (current) {
+    setScoreDisplay('currentScore', 'currentScoreBar', current.ai_style_score);
+    document.getElementById('currentScoreDetail').textContent = `${current.word_count} words · sample confidence ${current.confidence}%`;
+    const delta = scores.delta_from_initial !== null && scores.delta_from_initial !== undefined
+      ? Number(scores.delta_from_initial)
+      : Number(current.ai_style_score) - Number(initial?.ai_style_score || 0);
+    document.getElementById('scoreDelta').textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} pts`;
+    const previous = scores.delta_from_previous;
+    document.getElementById('scoreDeltaDetail').textContent = previous === null || previous === undefined
+      ? 'Compared with the initial text.'
+      : `This pass changed the score by ${Number(previous) > 0 ? '+' : ''}${Number(previous).toFixed(1)} points.`;
+  } else {
+    setScoreDisplay('currentScore', 'currentScoreBar', null);
+    document.getElementById('scoreDelta').textContent = '—';
+  }
+  const history = scores.history || [];
+  document.getElementById('scoreHistory').innerHTML = history.map(item =>
+    `<span class="history-chip"><strong>${item.label}</strong>: ${Number(item.score).toFixed(1)}%</span>`
+  ).join('');
+  if (scores.disclaimer) document.getElementById('scoreDisclaimer').textContent = scores.disclaimer;
+}
+
+async function loadInitialStyleScore() {
+  try {
+    const response = await fetch(`/style-score/${jobId}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    const data = await response.json();
+    if (data.initial) renderStyleScores(data);
+  } catch (_) {
+    document.getElementById('initialScoreDetail').textContent = 'Initial score could not be calculated.';
+  }
+}
+
+async function recalculateStyleScore() {
+  const result = document.getElementById('result');
+  const current = collectEdited();
+  const populated = chunkNumbers.filter(n => (current.edited_texts[n] || '').trim());
+  const payload = populated.length ? current : {};
+  try {
+    const response = await fetch(`/style-score/${jobId}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (data.initial) renderStyleScores(data);
+    if (!response.ok || !data.ok) {
+      result.innerHTML = `<div class="error"><strong>Style score could not be calculated.</strong> ${data.message || ''}</div>`;
+    }
+  } catch (err) {
+    result.innerHTML = `<div class="error"><strong>Style score failed.</strong><br>${err}</div>`;
+  }
+}
+
+function copyText(id) {
+  const box = document.getElementById(id);
+  box.select();
+  document.execCommand('copy');
+}
+function clearText(id) {
+  document.getElementById(id).value = '';
+}
+function collectEdited() {
+  const edited_texts = {};
+  for (const n of chunkNumbers) {
+    edited_texts[n] = document.getElementById(`edited_${n}`).value;
+  }
+  return { edited_texts };
+}
+function missingEditedParts(current = collectEdited()) {
+  return chunkNumbers.filter(n => !(current.edited_texts[n] || '').trim());
+}
+function renderValidation(data) {
+  const result = document.getElementById('result');
+  if (data.valid) {
+    result.innerHTML = `<div class="ok"><strong>Validation passed.</strong> ${data.section_count_actual} sections are ready for reinsertion. <a href="${data.validation_report_url}">Download validation report</a></div>`;
+  } else {
+    let issues = (data.issues || []).map(i => {
+      const sectionCounts = i.expected_sections !== undefined
+        ? ` (expected ${i.expected_sections} sections, got ${i.actual_sections})`
+        : '';
+      const lineCounts = i.expected_lines !== undefined
+        ? ` (expected ${i.expected_lines} lines, got ${i.actual_lines})`
+        : '';
+      return `<li>Part ${i.chunk_number}: ${i.message || 'Issue'}${sectionCounts}${lineCounts}</li>`;
+    }).join('');
+    result.innerHTML = `<div class="error"><strong>Validation failed.</strong> ${data.issue_count} issue(s). <a href="${data.validation_report_url || '#'}">Download validation report</a><ul>${issues}</ul></div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+  }
+}
+
+
+function collectEngineSettings(){
+  const raw=(document.getElementById('protectedTerms')?.value||'');
+  const protected_terms=raw.split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean);
+  return {engine:document.getElementById('rewriteEngine').value,style_profile:document.getElementById('styleProfile').value,protected_terms};
+}
+
+function budgetSummary(data) {
+  const b = data?.word_budget;
+  if (!b) return '';
+  const sign = Number(b.output_change_percent) > 0 ? '+' : '';
+  return `<div class="locked"><strong>Word-count control:</strong> ${b.original_words} original → ${b.output_words} current words (${sign}${Number(b.output_change_percent).toFixed(2)}%). Compression target: at or below the original where safe.</div>`;
+}
+
+
+async function rewriteAll() {
+  const result = document.getElementById('result');
+  const profile = document.getElementById('rewriteProfile').value;
+  const manualSettings = profile === 'manual' ? collectManualSettings() : null;
+  result.innerHTML = `<div class="warn">Applying the <strong>${profile}</strong> linguistic profile. No ML models are loaded. Protected facts, technical terms and DOCX structure remain locked.</div>`;
+  try {
+    const response = await fetch(`/rewrite/${jobId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({profile, manual_settings: manualSettings, ...collectEngineSettings()})
+    });
+    const data = await response.json();
+    if (data.style_scores) renderStyleScores(data.style_scores);
+    if (response.ok && data.ok) {
+      document.getElementById('cycleCount').textContent = data.cycle_number || 0;
+      document.getElementById('rewritePassCount').textContent = 1;
+    }
+
+    if (data.edited_texts) {
+      for (const n of chunkNumbers) {
+        if (data.edited_texts[n]) {
+          document.getElementById(`edited_${n}`).value = data.edited_texts[n];
+        }
+      }
+    }
+
+    const summaries = (data.chunk_logs || []).map(c => {
+      const s = c.summary || {};
+      return `Part ${c.chunk_number}: ${s.changed_count || 0} changed, ${s.rejected_count || 0} safety fallbacks, ${s.output_word_count || 0} words; ${s.document_glossary_count || 0} technical terms isolated`;
+    });
+    const summaryHtml = summaries.length ? `<ul>${summaries.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
+
+    if (response.ok && data.ok && data.pass_accepted) {
+      const manualSummary = data.manual_profile ? `<br>Manual target: <strong>${data.manual_profile.target_change_percent}% word-count change</strong>; compression ${data.manual_profile.compression_intensity}%; target compression ${data.manual_profile.target_change_percent}%.` : '';
+      result.innerHTML = `<div class="ok"><strong>Rewrite completed.</strong><br>The output passed structural/factual validation. No quality or detection rollback is applied.<br>Profile: <strong>${data.profile}</strong>.${manualSummary}${budgetSummary(data)}${summaryHtml}<a href="${data.rewrite_log_url}">Download rewrite audit log</a></div>`;
+    } else if (response.ok && data.ok) {
+      result.innerHTML = `<div class="warn"><strong>Safety fallback.</strong><br>The attempted output broke the fixed reinsertion structure, so the current safe text was retained.<br>Reason: <strong>${data.rollback_reason || 'structural validation'}</strong>.${budgetSummary(data)}${summaryHtml}<a href="${data.rewrite_log_url}">Download rewrite audit log</a></div>`;
+    } else {
+      result.innerHTML = `<div class="error"><strong>Local rewrite failed.</strong> ${data.message || ''}${summaryHtml}<a href="${data.rewrite_log_url || '#'}">Download rewrite audit log</a></div><pre>${JSON.stringify(data.validation || data, null, 2)}</pre>`;
+    }
+  } catch (err) {
+    result.innerHTML = `<div class="error"><strong>Local rewrite failed.</strong><br>${err}</div>`;
+  }
+}
+
+async function cycleRewrite() {
+  const result = document.getElementById('result');
+  const button = document.getElementById('cycleButton');
+  const profile = document.getElementById('rewriteProfile').value;
+  const manualSettings = profile === 'manual' ? collectManualSettings() : null;
+  const current = collectEdited();
+  const missing = chunkNumbers.filter(n => !(current.edited_texts[n] || '').trim());
+  if (missing.length) {
+    result.innerHTML = `<div class="error"><strong>Cycle cannot start.</strong> Edited text is empty for part(s): ${missing.join(', ')}. Run an initial rewrite or paste valid edited text first.</div>`;
+    return;
+  }
+
+  button.disabled = true;
+  result.innerHTML = `<div class="warn">Running another rewrite cycle on the <strong>current edited text</strong> with the <strong>${profile}</strong> profile...</div>`;
+  try {
+    const response = await fetch(`/rewrite-cycle/${jobId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        profile,
+        manual_settings: manualSettings,
+        ...collectEngineSettings(),
+        edited_texts: current.edited_texts
+      })
+    });
+    const data = await response.json();
+    if (data.style_scores) renderStyleScores(data.style_scores);
+
+    if (data.edited_texts) {
+      for (const n of chunkNumbers) {
+        if (data.edited_texts[n] !== undefined) {
+          document.getElementById(`edited_${n}`).value = data.edited_texts[n];
+        }
+      }
+    }
+
+    const summaries = (data.chunk_logs || []).map(c => {
+      const summary = c.summary || {};
+      return `Part ${c.chunk_number}: ${summary.changed_count || 0} changed, ${summary.rejected_count || 0} safety fallbacks, average ratio ${summary.average_word_ratio || 1}, ${summary.document_glossary_count || 0} technical terms isolated`;
+    });
+    const summaryHtml = summaries.length ? `<ul>${summaries.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
+
+    if (response.ok && data.ok) {
+      document.getElementById('cycleCount').textContent = data.cycle_number;
+      document.getElementById('rewritePassCount').textContent = (data.cycle_number || 0) + 1;
+      const cycleLog = data.cycle_log_url ? `<a href="${data.cycle_log_url}">Download cycle ${data.cycle_number} audit log</a>` : '';
+      if (data.pass_accepted) {
+        result.innerHTML = `<div class="ok"><strong>Rewrite cycle ${data.cycle_number} completed.</strong><br>The new output passed structural/factual safeguards. There is no detection or quality rollback.${budgetSummary(data)}${summaryHtml}${cycleLog}</div>`;
+      } else {
+        result.innerHTML = `<div class="warn"><strong>Rewrite cycle ${data.cycle_number} safety fallback.</strong><br>The pass broke the fixed reinsertion structure, so the previous text was retained.<br>Reason: <strong>${data.rollback_reason || 'structural validation'}</strong>.${budgetSummary(data)}${summaryHtml}${cycleLog}</div>`;
+      }
+    } else {
+      const details = data.validation ? `<pre>${JSON.stringify(data.validation, null, 2)}</pre>` : '';
+      result.innerHTML = `<div class="error"><strong>Rewrite cycle failed.</strong> ${data.message || 'The result did not pass validation.'}</div>${details}`;
+    }
+  } catch (err) {
+    result.innerHTML = `<div class="error"><strong>Rewrite cycle failed.</strong><br>${err}</div>`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function validateAll() {
+  const result = document.getElementById('result');
+  const current = collectEdited();
+  const missing = missingEditedParts(current);
+  if (missing.length) {
+    result.innerHTML = `<div class="error"><strong>Validation cannot start.</strong> Edited text is empty for part(s): ${missing.join(', ')}. Run the selected rewrite profile or paste the complete edited chunk first. Lists are not the cause of this empty-input error.</div>`;
+    return;
+  }
+  result.innerHTML = '<div class="warn">Validating edited text structure...</div>';
+  try {
+    const response = await fetch(`/validate/${jobId}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(current)
+    });
+    const data = await response.json();
+    renderValidation(data);
+  } catch (err) {
+    result.innerHTML = `<div class="error"><strong>Validation request failed.</strong><br>${err}</div>`;
+  }
+}
+async function reinsertAll() {
+  const result = document.getElementById('result');
+  const current = collectEdited();
+  const missing = missingEditedParts(current);
+  if (missing.length) {
+    result.innerHTML = `<div class="error"><strong>Reinsertion cannot start.</strong> Edited text is empty for part(s): ${missing.join(', ')}. Run the selected rewrite profile or paste the complete edited chunk first.</div>`;
+    return;
+  }
+  result.innerHTML = '<div class="warn">Processing reinsertion...</div>';
+  try {
+    const response = await fetch(`/reinsert/${jobId}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(current)
+    });
+    const data = await response.json();
+    if (response.ok && data.ok) {
+      result.innerHTML = `<div class="ok"><strong>${data.message}</strong><br><br><a class="button" href="${data.download_url}">Download 4_org_fin.docx</a> <a class="button secondary" href="${data.replacement_log_url}">Download replacement log</a></div>`;
+    } else {
+      const validation = data.validation ? `<pre>${JSON.stringify(data.validation, null, 2)}</pre>` : '';
+      result.innerHTML = `<div class="error"><strong>Reinsertion failed.</strong> ${data.message || ''}</div>${validation}`;
+    }
+  } catch (err) {
+    result.innerHTML = `<div class="error"><strong>Reinsertion request failed.</strong><br>${err}</div>`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => { initialiseManualControls(); loadInitialStyleScore(); });
+</script>
+</body>
+</html>
