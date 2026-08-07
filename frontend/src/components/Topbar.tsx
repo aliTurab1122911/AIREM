@@ -1,7 +1,7 @@
 import { Bell, CircleHelp, Menu } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 
-const titles: Record<string, string> = {'/app':'Overview','/app/rewrite':'New rewrite','/app/documents':'Documents','/app/reports':'Reports','/app/billing':'Usage & billing','/app/settings':'Settings'}
+const titles: Record<string, string> = {'/app':'Overview','/app/rewrite':'New rewrite','/app/documents':'Documents','/app/reports':'Reports','/app/billing':'Usage & plan','/app/settings':'Settings'}
 export function Topbar({ onMenu, allowance }: { onMenu: () => void; allowance?: {used:number; total:number} }) {
   const location = useLocation()
   const remaining = allowance ? Math.max(allowance.total - allowance.used, 0).toLocaleString() : '—'

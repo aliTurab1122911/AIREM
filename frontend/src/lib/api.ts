@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -33,6 +33,9 @@ export type JobState = 'queued'|'processing'|'review_required'|'completed'|'fail
 export interface ProcessingJob { id:string; operation:string; state:JobState; progress:number; attempt:number; maxAttempts:number; errorMessage?:string; createdAt:string; updatedAt:string }
 
 export const api = {
+  accountDashboard: () => request<import('../features/dashboard/types').AccountDashboard>('/api/account/dashboard'),
+  usageHistory: () => request<import('../features/dashboard/types').AccountDashboard['usageHistory']>('/api/account/usage-history'),
+  notifications: () => request<import('../features/dashboard/types').AccountDashboard['notifications']>('/api/account/notifications'),
   dashboard: () => request<DashboardData>('/api/dashboard'),
   jobs: () => request<{jobs:ProcessingJob[]}>('/api/jobs'),
   cancelJob: (id:string) => request(`/api/jobs/${id}`, { method:'DELETE' }),
