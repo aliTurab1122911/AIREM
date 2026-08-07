@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN groupadd --system airem && useradd --system --gid airem --home-dir /app airem
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+COPY --chown=airem:airem app.py ./
+COPY --chown=airem:airem scripts ./scripts
+COPY --chown=airem:airem templates ./templates
+USER airem
+EXPOSE 5000
+CMD ["gunicorn", "--bind=0.0.0.0:5000", "--workers=2", "--threads=1", "--timeout=120", "--graceful-timeout=30", "--keep-alive=5", "app:app"]

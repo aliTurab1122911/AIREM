@@ -12,6 +12,8 @@ ENV NODE_ENV=production
 COPY packages/contracts /app/packages/contracts
 COPY services/gateway/package*.json ./
 RUN npm install --omit=dev
-COPY --from=build /app/services/gateway/dist dist
+RUN npm cache clean --force
+COPY --from=build --chown=node:node /app/services/gateway/dist dist
+USER node
 EXPOSE 4000
 CMD ["node", "dist/index.js"]

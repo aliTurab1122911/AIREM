@@ -126,3 +126,111 @@ Without an API key, the linguistic rewriter, manual range editing, detection, fo
 ## Production note
 
 The built-in detection report is an experimental writing-pattern diagnostic. It does not establish authorship and should not be treated as equivalent to a third-party detection system.
+
+## Container deployment and operations
+
+The Compose stack publishes **only HTTPS on port 8443**. PostgreSQL, Redis, the
+accounts API, gateway, and unchanged Flask processor are reachable only on the
+internal `backend` network. Nginx terminates TLS, caps uploads at 25 MiB, and
+proxies application requests. Use a certificate whose names match the public
+host; production certificates should come from your ingress or ACME provider.
+
+### Local startup, database migrations, and first account
+
+1. Install Docker Engine with Compose v2, then create configuration and a local
+   TLS certificate (do not commit either `.env` or private keys):
+
+   ```bash
+   cp .env.example .env
+   mkdir -p deploy/tls
+   openssl req -x509 -newkey rsa:3072 -nodes -days 30 \
+     -keyout deploy/tls/tls.key -out deploy/tls/tls.crt -subj '/CN=localhost' \
+     -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+   chmod 600 deploy/tls/tls.key
+   ```
+
+   Replace the placeholder database password and cookie secret in `.env`.
+2. Start the stateful dependencies, apply both versioned migration sets, and
+   then start the application:
+
+   ```bash
+   docker compose up -d postgres redis
+   docker compose run --rm accounts node dist/migrate.js
+   docker compose run --rm gateway node dist/migrate.js
+   docker compose up -d
+   docker compose ps
+   ```
+
+3. Browse to `https://localhost:8443` (the self-signed local certificate causes
+   an expected browser warning). Create the initial account through the **Create
+   account** screen. Registration is the supported bootstrap path; there is no
+   default password or account baked into an image. It may also be submitted to
+   `POST /api/auth/register` through the TLS proxy.
+
+Workers are optional. Enable and scale them according to available CPU and RAM;
+each worker defaults to two concurrent document jobs and is capped separately:
+
+```bash
+docker compose --profile workers up -d --scale worker=2
+```
+
+Do not increase `WORKER_CONCURRENCY` without load testing. DOCX/PDF operations
+can consume substantial memory, and the Compose limits deliberately bound both
+processors and workers. Containers receive SIGTERM, use an init process, and
+have 45-second (PostgreSQL: 60-second) graceful-stop windows.
+
+### Logs, backup, and restore
+
+Application logs go to container stdout/stderr and contain no request bodies:
+
+```bash
+docker compose logs -f --tail=200 frontend accounts gateway processor worker
+```
+
+Create database and controlled-document-volume backups while the stack is
+quiescent. Database dumps are consistent online; stop document writers while
+archiving the volume:
+
+```bash
+mkdir -p backups
+docker compose exec -T postgres pg_dump -U airem -d airem -Fc > backups/airem.dump
+docker compose stop processor worker
+docker run --rm -v airem_documents:/source:ro -v "$PWD/backups:/backup" alpine \
+  tar czf /backup/documents.tgz -C /source .
+docker compose start processor
+```
+
+To restore, use a fresh/empty database and document volume. The following is
+destructive and should be tested in a staging environment first:
+
+```bash
+docker compose down
+docker volume rm airem_postgres-data airem_documents
+docker compose up -d postgres
+docker compose exec -T postgres dropdb -U airem --if-exists airem
+docker compose exec -T postgres createdb -U airem airem
+docker compose exec -T postgres pg_restore -U airem -d airem --clean --if-exists < backups/airem.dump
+docker run --rm -v airem_documents:/target -v "$PWD/backups:/backup:ro" alpine \
+  tar xzf /backup/documents.tgz -C /target
+docker compose up -d
+```
+
+### Upgrades and teardown
+
+Back up first, review release notes and migration SQL, then rebuild, migrate,
+and replace containers. Roll back application images only when the database
+schema remains compatible.
+
+```bash
+git pull --ff-only
+docker compose build --pull
+docker compose run --rm accounts node dist/migrate.js
+docker compose run --rm gateway node dist/migrate.js
+docker compose up -d --remove-orphans
+docker image prune -f
+```
+
+Stop containers while retaining data with `docker compose down`. To permanently
+delete PostgreSQL and stored documents, confirm that backups are usable, then
+run `docker compose down --volumes --remove-orphans`. The latter cannot be
+undone.

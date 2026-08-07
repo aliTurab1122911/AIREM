@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+!.env.example
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/node_modules/
+**/dist/
+**/.cache/
+docs/
+uploads/
+data/
+*.docx
+*.pdf
+TEST_REPORT_*.md
+CHANGELOG_*.md

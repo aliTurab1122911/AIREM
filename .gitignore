@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+**/__pycache__/
+**/.pytest_cache/
+deploy/tls/
+uploads/
+data/
+backups/

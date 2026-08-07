@@ -12,6 +12,7 @@ const publicUser=(u:typeof s.users.$inferSelect)=>({id:u.id,email:u.email,displa
 
 export function buildApp(db:NodePgDatabase<typeof s>,cfg:Config,mailer:TokenMailer=silentMailer){
  const app=Fastify({logger:false,trustProxy:true}); app.register(cookie,{secret:cfg.COOKIE_SECRET}); app.register(rateLimit,{global:false});
+ app.get('/healthz',async()=>({ok:true}));
  app.setErrorHandler((e,_q,r)=>{ if(e instanceof z.ZodError)return r.status(400).send({error:{code:'VALIDATION_ERROR',details:e.issues.map(i=>({path:i.path.join('.'),message:i.message}))}}); const status=(e as any).statusCode||500; return r.status(status).send({error:{code:status===429?'RATE_LIMITED':'INTERNAL_ERROR'}}); });
  const cookieOpts={httpOnly:true,sameSite:'strict' as const,secure:cfg.NODE_ENV==='production',path:'/'};
  async function issue(userId:string,r:FastifyReply){const raw=token(),csrf=token(),expiresAt=new Date(Date.now()+cfg.SESSION_TTL_HOURS*3600000); await db.insert(s.sessions).values({idHash:hash(raw),userId,csrfHash:hash(csrf),expiresAt}); r.setCookie('session',raw,{...cookieOpts,expires:expiresAt}).setCookie('csrf',csrf,{...cookieOpts,httpOnly:false,expires:expiresAt});}
