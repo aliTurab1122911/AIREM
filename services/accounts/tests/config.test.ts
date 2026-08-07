@@ -1,0 +1,2 @@
+import { describe,expect,it } from 'vitest'; import { configSchema } from '../src/config.js';
+describe('configuration',()=>{it('rejects short cookie secrets',()=>{expect(()=>configSchema.parse({DATABASE_URL:'postgresql://localhost/a',COOKIE_SECRET:'short',APP_ORIGIN:'http://localhost'})).toThrow()});it('parses safe defaults',()=>{const c=configSchema.parse({DATABASE_URL:'postgresql://localhost/a',COOKIE_SECRET:'x'.repeat(32),APP_ORIGIN:'http://localhost'});expect(c.SESSION_TTL_HOURS).toBe(168)})});
