@@ -5,7 +5,9 @@ services:
     networks: [public]
     depends_on: [gateway]
   gateway:
-    build: ./services/gateway
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
     environment:
       DATABASE_URL: postgresql://airem:${POSTGRES_PASSWORD:-change-me}@postgres:5432/airem
       COOKIE_SECRET: ${COOKIE_SECRET:?set COOKIE_SECRET}
