@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { request as undiciRequest, type Dispatcher } from 'undici';
 import type { Config } from './config.js';
 import type { GatewayStore } from './store.js';
+import type { JobQueue } from './jobs.js';
 import {
   registerDetectionAdapter, registerDocumentAdapter, registerDownloadAdapter,
   registerFormattingAdapter, registerOpenAiRangeEditAdapter, registerRangeAdapter,
@@ -53,7 +54,7 @@ function cleanHeaders(headers: FastifyRequest['headers'], requestId: string) {
   return result;
 }
 
-export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream) {
+export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream, queue?: JobQueue) {
   const app = Fastify({ logger: { redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body', 'res.body'] }, disableRequestLogging: true, bodyLimit: cfg.UPLOAD_MAX_BYTES, requestIdHeader: false, genReqId: () => randomUUID() });
   app.register(cookie, { secret: cfg.COOKIE_SECRET });
   app.register(rateLimit, { global: false });
@@ -65,6 +66,15 @@ export function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream) 
     });
     return response as unknown as UpstreamResponse;
   });
+
+  const authenticate=async(request:FastifyRequest,reply:any)=>{const session=request.cookies.session;const userId=session&&await store.sessionUser(session);if(!userId){reply.status(401).send({error:{code:'AUTH_REQUIRED'},requestId:request.id});return;}return userId;};
+  const readJson=async(request:FastifyRequest)=>{const chunks:Buffer[]=[];for await(const chunk of request.body as AsyncIterable<Buffer>)chunks.push(Buffer.from(chunk));return JSON.parse(Buffer.concat(chunks).toString('utf8'));};
+  const allowedOperations=new Set(['text_rewrite','text_detection','document_rewrite','document_validation','formatting_apply']);
+  app.post('/api/jobs',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const key=request.headers['idempotency-key'];if(typeof key!=='string'||key.length<8||key.length>200)return reply.status(400).send({error:{code:'IDEMPOTENCY_KEY_REQUIRED'},requestId:request.id});let body:any;try{body=await readJson(request);}catch{return reply.status(400).send({error:{code:'INVALID_JSON'},requestId:request.id});}if(!body||!allowedOperations.has(body.operation)||typeof body.payload!=='object')return reply.status(422).send({error:{code:'VALIDATION_ERROR'},requestId:request.id});if(!store.createJob||!queue)return reply.status(503).send({error:{code:'QUEUE_UNAVAILABLE'},requestId:request.id});const made=await store.createJob(userId,key,body.operation,body.payload,cfg.USER_JOB_CONCURRENCY,cfg.JOB_TTL_HOURS);if(!made)return reply.status(429).send({error:{code:'USER_CONCURRENCY_LIMIT'},requestId:request.id});if(made.created)await queue.add(made.job.id);return reply.status(made.created?202:200).send({job:made.job,idempotentReplay:!made.created});});
+  app.get('/api/jobs',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;return{jobs:await store.listJobs?.(userId)??[]};});
+  app.get('/api/jobs/:id',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;const job=await store.getJob?.(userId,id);return job?{job}:reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});});
+  app.delete('/api/jobs/:id',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;if(!await store.getJob?.(userId,id))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});if(!await queue?.cancel(id)||!await store.cancelJob?.(userId,id))return reply.status(409).send({error:{code:'JOB_ALREADY_STARTED'},requestId:request.id});return reply.status(202).send({ok:true});});
+  app.get('/api/jobs/:id/events',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;if(!await store.getJob?.(userId,id))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});reply.hijack();reply.raw.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache, no-transform','connection':'keep-alive'});let previous='';for(let i=0;i<20&&!reply.raw.destroyed;i++){const job=await store.getJob?.(userId,id);const data=JSON.stringify(job);if(data!==previous){reply.raw.write(`event: progress\ndata: ${data}\n\n`);previous=data;}if(!job||['completed','failed','expired'].includes(job.state))break;await new Promise(r=>setTimeout(r,1000));}reply.raw.end();});
 
   app.setErrorHandler((error, request, reply) => {
     request.log.warn({ err: { name: error.name, message: error.message }, requestId: request.id }, 'gateway request rejected');
