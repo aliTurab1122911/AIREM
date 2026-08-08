@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install
+      - run: npm ci
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install
+      - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run db:migrate
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run db:migrate
       - name: Confirm isolated PostgreSQL and Redis are reachable
@@ -126,11 +126,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install
+      - run: npm ci
         working-directory: e2e
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
-      - run: npm install
+      - run: npm ci
         working-directory: frontend
       - run: npm test
         working-directory: e2e
@@ -147,18 +147,18 @@ jobs:
         with: { node-version: 22 }
       - name: Install and audit JavaScript production dependencies
         run: |
-          npm install --ignore-scripts --prefix frontend
+          npm ci --ignore-scripts --workspace airem-frontend
           npm audit --omit=dev --audit-level=high --prefix frontend
-          npm install --ignore-scripts --prefix services/accounts
+          npm ci --ignore-scripts --workspace @airem/accounts
           npm audit --omit=dev --audit-level=high --prefix services/accounts
-          npm install --ignore-scripts --prefix services/gateway
+          npm ci --ignore-scripts --workspace @airem/gateway
           npm audit --omit=dev --audit-level=high --prefix services/gateway
       - run: python -m pip install pip-audit && pip-audit -r requirements.txt
       - name: Build production images
         run: |
           docker build -t airem-processor:ci -f Dockerfile.python .
-          docker build -t airem-frontend:ci frontend
-          docker build -t airem-accounts:ci services/accounts
+          docker build -t airem-frontend:ci -f frontend/Dockerfile .
+          docker build -t airem-accounts:ci -f services/accounts/Dockerfile .
           docker build -t airem-gateway:ci -f services/gateway/Dockerfile .
       - uses: aquasecurity/trivy-action@master
         with:

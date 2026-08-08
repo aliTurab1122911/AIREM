@@ -1,0 +1,16 @@
+{
+  "name": "airem",
+  "private": true,
+  "packageManager": "npm@11.4.2",
+  "engines": {
+    "node": ">=22 <25",
+    "npm": ">=10 <12"
+  },
+  "workspaces": [
+    "frontend",
+    "services/accounts",
+    "services/gateway",
+    "packages/contracts",
+    "e2e"
+  ]
+}
