@@ -1,0 +1,161 @@
+name: AIREM Production Cutover
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cutover-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Cutover regressions and production build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: airem
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: cutover_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U airem -d cutover_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://airem:test-password@localhost:5432/cutover_test
+      TEST_DATABASE_URL: postgresql://airem:test-password@localhost:5432/cutover_test
+      REDIS_URL: redis://localhost:6379
+      COOKIE_SECRET: cutover-cookie-secret-at-least-thirty-two-characters
+      APP_ORIGIN: https://localhost:8443
+      SMTP_HOST: localhost
+      MAIL_FROM: ci@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - name: Verify protected v21 processing source
+        run: python ci/verify_protected_processing.py
+      - name: Install processor dependencies
+        run: python -m pip install --requirement requirements.txt pytest
+      - name: Run every Python regression
+        run: python -m pytest -q
+      - name: Install JavaScript workspaces
+        run: npm ci
+      - name: Build canonical contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Account service typecheck and tests
+        run: |
+          npm run typecheck --workspace @airem/accounts
+          npm run db:migrate --workspace @airem/accounts
+          npm test --workspace @airem/accounts
+      - name: Gateway typecheck, migrations and all tests
+        run: |
+          npm run typecheck --workspace @airem/gateway
+          npm run db:migrate --workspace @airem/gateway
+          npm test --workspace @airem/gateway
+      - name: React lint, formatting, tests and production build
+        run: |
+          npm run lint --workspace airem-frontend
+          npm run format:check --workspace airem-frontend
+          npm run typecheck --workspace airem-frontend
+          npm test --workspace airem-frontend
+          npm run build --workspace airem-frontend
+      - name: Build all production images
+        run: |
+          docker build -t airem-processor:cutover -f Dockerfile.python .
+          docker build -t airem-frontend:cutover -f frontend/Dockerfile .
+          docker build -t airem-accounts:cutover -f services/accounts/Dockerfile .
+          docker build -t airem-gateway:cutover -f services/gateway/Dockerfile .
+
+  authenticated-e2e:
+    name: Complete authenticated production E2E
+    needs: regression
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: airem-cutover-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_cutover_e2e
+      POSTGRES_PASSWORD: e2e-postgres-password
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: e2e@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install Playwright workspace
+        run: npm ci
+        working-directory: e2e
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: |
+          mkdir -p deploy/tls
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+            -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build production Compose services
+        run: docker compose build
+      - name: Start stateful dependencies and processor
+        run: docker compose up -d postgres redis processor
+      - name: Wait for stateful dependencies
+        run: docker compose up --wait --no-deps postgres redis processor
+      - name: Apply migrations before health-gated services start
+        run: |
+          docker compose run --rm --no-deps accounts node dist/migrate.js
+          docker compose run --rm --no-deps gateway node dist/migrate.js
+      - name: Start accounts, BullMQ worker, gateway and React frontend
+        run: docker compose up -d accounts worker gateway frontend
+      - name: Require every production health check
+        run: docker compose up --wait --wait-timeout 240
+      - name: Require public health
+        run: curl --fail --silent --show-error --insecure --retry 20 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz >/dev/null
+      - name: Run canonical authenticated Compose smoke
+        run: ci/compose_smoke.sh
+      - name: Run every full authenticated browser workflow
+        run: npm run test:full
+        working-directory: e2e
+      - name: Collect logs and destroy isolated state
+        if: always()
+        run: |
+          docker compose ps --all > compose-status.log
+          docker compose logs --no-color > compose.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cutover-e2e-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            compose.log
+            compose-status.log
+
+  required:
+    name: AIREM Cutover Required
+    if: always()
+    needs: [regression, authenticated-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every cutover gate
+        env:
+          REGRESSION: ${{ needs.regression.result }}
+          E2E: ${{ needs.authenticated-e2e.result }}
+        run: |
+          test "$REGRESSION" = success
+          test "$E2E" = success
