@@ -84,11 +84,11 @@ async function run(bullJob: Job) {
     });
     await bullJob.updateProgress(100);
 
-    if (completion === 'allowance_exceeded') {
-      throw Object.assign(new Error('word allowance exceeded'), { transient: false, terminalAlreadyRecorded: true });
+    if (completion === 'allowance_exceeded' || completion === 'cancelled') {
+      throw Object.assign(new Error(completion), { transient: false, terminalAlreadyRecorded: completion });
     }
   } catch (error: any) {
-    if (error?.terminalAlreadyRecorded) throw new UnrecoverableError('word allowance exceeded');
+    if (error?.terminalAlreadyRecorded) throw new UnrecoverableError(String(error.terminalAlreadyRecorded));
     const outcome = await failOrRetryOrchestrationJob(pool, {
       id,
       attempt,
