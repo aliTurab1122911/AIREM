@@ -5,7 +5,7 @@ import type { GatewayStore } from '../src/store.js';
 import type { JobQueue } from '../src/jobs.js';
 
 const aliceJob = '11111111-1111-4111-8111-111111111111';
-const cfg: any = { COOKIE_SECRET: 'test-cookie-secret-that-is-long-enough', FLASK_ORIGIN: 'http://processor:5000', PORT: 4000, NODE_ENV: 'test', UPLOAD_MAX_BYTES: 1024 * 1024, UPSTREAM_HEADERS_TIMEOUT_MS: 1000, UPSTREAM_BODY_TIMEOUT_MS: 1000, RATE_LIMIT_MAX: 100 };
+const cfg: any = { COOKIE_SECRET: 'test-cookie-secret-that-is-long-enough', FLASK_ORIGIN: 'http://processor:5000', PORT: 4000, NODE_ENV: 'test', UPLOAD_MAX_BYTES: 1024 * 1024, UPSTREAM_HEADERS_TIMEOUT_MS: 1000, UPSTREAM_BODY_TIMEOUT_MS: 1000, RATE_LIMIT_MAX: 100, USER_JOB_CONCURRENCY: 2, JOB_TTL_HOURS: 72 };
 
 class MemoryStore implements GatewayStore {
   sessions = new Map([['alice-session', 'alice'], ['bob-session', 'bob']]);
@@ -37,9 +37,9 @@ describe('gateway account isolation', () => {
     expect(standardLimited.json().error.code).toBe('RATE_LIMITED');
     await app.close();
 
-    const processingApp = await buildApp(new MemoryStore(), { ...cfg, RATE_LIMIT_MAX: 6 }, async () => response());
-    const jobRequest = { method: 'POST' as const, url: '/api/jobs', headers: { ...headers, 'content-type': 'application/json', 'idempotency-key': 'request-123' }, payload: JSON.stringify({ operation: 'text_rewrite', payload: {} }) };
-    expect((await processingApp.inject(jobRequest)).statusCode).toBe(400);
+    const processingApp = await buildApp(new MemoryStore(), { ...cfg, RATE_LIMIT_MAX: 6 }, async () => response(), queue(false));
+    const jobRequest = { method: 'POST' as const, url: '/api/jobs', headers: { ...headers, 'content-type': 'application/json', 'idempotency-key': 'request-123' }, payload: JSON.stringify({ operation: 'text_rewrite', payload: { text: 'A valid queued rewrite sample.' } }) };
+    expect((await processingApp.inject(jobRequest)).statusCode).toBe(503);
     const processingLimited = await processingApp.inject(jobRequest);
     expect(processingLimited.statusCode).toBe(429);
     expect(processingLimited.json().error.code).toBe('RATE_LIMITED');
@@ -69,14 +69,16 @@ describe('gateway account isolation', () => {
     await app.close();
   });
 
-  it('claims a returned Flask UUID and increments usage only after success', async () => {
+  it('charges successful synchronous work from canonical JSON metadata, not a processor header', async () => {
     const store = new MemoryStore();
-    const job = '22222222-2222-4222-8222-222222222222';
-    const upstream: Upstream = async () => response(JSON.stringify({ job_id: job }), { 'x-airem-words-processed': '17' });
+    const upstream: Upstream = async () => response(JSON.stringify({ ok: true, original_words: 17, rewritten_text: 'done' }));
     const app = await buildApp(store, cfg, upstream);
-    const result = await app.inject({ method: 'POST', url: '/api/documents/upload', headers: { cookie: 'session=alice-session', 'content-type': 'application/octet-stream' }, payload: 'metadata' });
+    const result = await app.inject({
+      method: 'POST', url: '/api/text/rewrite',
+      headers: { cookie: 'session=alice-session', 'content-type': 'application/json' },
+      payload: JSON.stringify({ text: 'This valid input contains seventeen billable source words for the accounting regression test in the synchronous gateway path.' }),
+    });
     expect(result.statusCode).toBe(200);
-    expect(store.jobs.get(job)).toBe('alice');
     expect(store.usage).toEqual([['alice', 17]]);
     await app.close();
   });
@@ -96,9 +98,9 @@ describe('gateway account isolation', () => {
       observedLength = args.headers['content-length'];
       expect(Buffer.isBuffer(args.body)).toBe(true);
       observedBody = args.body as Buffer;
-      return response(JSON.stringify({ ok: true, rewritten_text: 'done' }));
+      return response(JSON.stringify({ ok: true, original_words: 5, rewritten_text: 'done' }));
     });
-    const payload = { text: 'A deterministic JSON forwarding test.', profile: 'natural', intensity: 0.55 };
+    const payload = { text: 'A deterministic JSON forwarding test.', profile: 'natural' };
     const result = await app.inject({
       method: 'POST', url: '/api/text/rewrite',
       headers: { cookie: 'session=alice-session', 'content-type': 'application/json' },
