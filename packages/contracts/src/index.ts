@@ -118,6 +118,7 @@ export const textDetectionRequestSchema = z.object({ text: z.string().min(1) }).
 export const formattingSettingValueSchema = z.union([z.string(),z.number(),z.boolean()]);
 export const formattingApplyRequestSchema = z.object({ settings: z.record(z.string(), formattingSettingValueSchema) }).strict();
 
+// Legacy aliases remain for compatibility; PR8 routes use the typed schemas in range-edit.ts.
 export const rangeDraftSchema = z.object({ visual_ranges: z.array(visualRangeSchema).min(1), manual_only: z.boolean().optional(), prompt: z.string().optional(), model: z.string().optional() }).strict();
 export const rangeExportSchema = z.object({ session_id: z.string().min(1), replacements: z.array(z.string()).optional(), edited_texts: editedTextsSchema.optional() }).strict();
 export const rangeContinueSchema = rangeExportSchema;
@@ -199,3 +200,5 @@ export type TurnitinResponse = z.infer<typeof turnitinResponseSchema>;
 export type ProgressState = z.infer<typeof progressStateSchema>;
 export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 export type JobResponse = z.infer<typeof jobResponseSchema>;
+
+export * from './range-edit.js';

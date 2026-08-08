@@ -11,9 +11,11 @@ from flask import jsonify, request
 
 from app import app, get_job
 from processor_api import api_bp
+from processor_range_api import range_api_bp
 
 
 app.register_blueprint(api_bp)
+app.register_blueprint(range_api_bp)
 
 
 @app.before_request

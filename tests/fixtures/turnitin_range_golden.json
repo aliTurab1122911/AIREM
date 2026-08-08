@@ -1,0 +1,17 @@
+{
+  "verification_status": "verified",
+  "reported_ai_score": 88,
+  "minimum_content_similarity": 0.9,
+  "minimum_highlight_mapping_coverage": 0.95,
+  "minimum_exact_ranges": 2,
+  "expanded_paragraph_count": 1,
+  "expanded_table_count": 1,
+  "exact_sources": ["turnitin"],
+  "expanded_sources": ["turnitin-expanded"],
+  "paragraph_visual_id": "vp_2",
+  "table_visual_id": "vc_0_1_1_0",
+  "paragraph_fragment": "This exact paragraph should be highlighted and mapped into the Word preview.",
+  "table_fragment": "This highlighted table cell should expand to the complete table.",
+  "approved_paragraph": "This paragraph was approved during selected-range review.",
+  "approved_table": "This table cell was approved during selected-range review."
+}
