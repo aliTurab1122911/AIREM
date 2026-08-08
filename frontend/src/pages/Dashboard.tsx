@@ -9,15 +9,21 @@ import {
   WorkflowSummary,
 } from "../features/dashboard/components";
 import { useDashboard } from "../features/dashboard/hooks";
+import { useAuth } from "../auth/AuthContext";
 
 export function Dashboard() {
   const { data, error, loading, refresh } = useDashboard();
+  const { user } = useAuth();
   return (
     <div className="dashboard">
       <section className="welcome">
         <div>
           <p className="eyebrow">Workspace overview</p>
-          <h2>Your dashboard</h2>
+          <h2>
+            {user?.displayName
+              ? `Welcome, ${user.displayName}`
+              : "Your dashboard"}
+          </h2>
           <p>Usage, documents, and review activity for this account.</p>
         </div>
         <Link className="button primary desktop-cta" to="/app/rewrite">

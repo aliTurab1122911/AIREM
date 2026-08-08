@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { GuestRoute, ProtectedRoute } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
@@ -10,12 +11,33 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Auth />} />
-      <Route path="/register" element={<Auth />} />
+      <Route
+        path="/login"
+        element={
+          <GuestRoute>
+            <Auth />
+          </GuestRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <GuestRoute>
+            <Auth />
+          </GuestRoute>
+        }
+      />
       <Route path="/forgot-password" element={<Auth />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/app" element={<AppShell />}>
+      <Route
+        path="/app"
+        element={
+          <ProtectedRoute>
+            <AppShell />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Dashboard />} />
         <Route path="rewrite" element={<RewriteStudio />} />
         <Route path="documents" element={<Documents />} />

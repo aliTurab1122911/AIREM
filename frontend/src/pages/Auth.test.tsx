@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Auth } from "./Auth";
 import { PASSWORD_MIN_LENGTH, registrationSchema } from "@airem/contracts";
 
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({ refreshSession: vi.fn() }),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("authentication forms", () => {

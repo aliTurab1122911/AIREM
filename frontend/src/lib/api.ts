@@ -14,6 +14,15 @@ export class ApiError extends Error {
   }
 }
 
+export const AUTH_REQUIRED_EVENT = "airem:auth-required";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  emailVerified?: boolean;
+}
+
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
 const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/login",
@@ -67,6 +76,14 @@ export async function request<T>(
     } catch {
       details = undefined;
     }
+    if (
+      response.status === 401 &&
+      (details as { error?: { code?: string } } | undefined)?.error?.code ===
+        "AUTH_REQUIRED" &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+    }
     throw new ApiError(
       `Request failed (${response.status})`,
       response.status,
@@ -115,6 +132,7 @@ export interface ProcessingJob {
 }
 
 export const api = {
+  session: () => request<{ user: AuthUser }>("/api/auth/session"),
   uploadDocument: (file: File) => {
     const body = new FormData();
     body.append("docx_file", file);

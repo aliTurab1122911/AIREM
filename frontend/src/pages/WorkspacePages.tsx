@@ -1,11 +1,307 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, type ProcessingJob } from "../lib/api";
-import { BarChart3, Check, FileText, RefreshCw, Settings as SettingsIcon } from "lucide-react";
-function useJobs(){const [jobs,setJobs]=useState<ProcessingJob[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState("");const load=()=>{setLoading(true);setError("");api.jobs().then(x=>setJobs(x.jobs)).catch(e=>setError(e instanceof Error?e.message:"Unable to load")).finally(()=>setLoading(false))};useEffect(load,[]);return{jobs,loading,error,load}}
-function State({loading,error,retry,empty}:{loading:boolean,error:string,retry:()=>void,empty:boolean}){if(loading)return <div className="inline-loading"><span className="spinner"/>Loading workspace data…</div>;if(error)return <div className="error-state"><div><strong>Could not load this view</strong><p>{error}</p></div><button className="button secondary" onClick={retry}><RefreshCw size={14}/>Retry</button></div>;if(empty)return <div className="small-empty"><FileText/><h3>Nothing here yet</h3><p>Completed operations will appear automatically.</p><Link to="/app/rewrite">Start a rewrite</Link></div>;return null}
-function Page({title,copy,children}:{title:string;copy:string;children:ReactNode}){return <section className="workspace-page"><header><p className="eyebrow">Workspace</p><h2>{title}</h2><p>{copy}</p></header>{children}</section>}
-export function Documents(){const x=useJobs();return <Page title="Documents" copy="Uploaded documents, formatting projects, and generated files."><State loading={x.loading} error={x.error} retry={x.load} empty={!x.jobs.length}/>{x.jobs.map(j=><article className="inventory-row" key={j.id}><FileText/><div><strong>{j.operation.replaceAll("_"," ")}</strong><span>Updated {new Date(j.updatedAt).toLocaleString()} · attempt {j.attempt}/{j.maxAttempts}</span><progress value={j.progress} max="100"/></div><span className={`job-state ${j.state}`}>{j.state.replaceAll("_"," ")}</span></article>)}</Page>}
-export function Reports(){const x=useJobs();return <Page title="Reports" copy="Validation, rewrite, detection, and formatting diagnostics."><div className="summary-grid"><article><BarChart3/><strong>{x.jobs.length}</strong><span>Total operations</span></article><article><Check/><strong>{x.jobs.filter(j=>j.state==="completed").length}</strong><span>Completed</span></article><article><RefreshCw/><strong>{x.jobs.filter(j=>j.state==="processing").length}</strong><span>In progress</span></article></div><State loading={x.loading} error={x.error} retry={x.load} empty={!x.jobs.length}/>{x.jobs.map(j=><article className="report-row" key={j.id}><div><strong>{j.operation.replaceAll("_"," ")}</strong><span>{new Date(j.createdAt).toLocaleDateString()}</span></div><span>{j.progress}% processed</span><span className={`job-state ${j.state}`}>{j.state}</span></article>)}</Page>}
-export function Usage(){const [data,setData]=useState<Array<{period:string;words:number}>>([]),[loading,setLoading]=useState(true),[error,setError]=useState("");const load=()=>{setLoading(true);setError("");api.usageHistory().then(x=>setData(x.months.map(item=>({period:item.month,words:item.wordsProcessed})))).catch(e=>setError(e.message)).finally(()=>setLoading(false))};useEffect(load,[]);const max=Math.max(1,...data.map(x=>x.words));return <Page title="Usage & plan" copy="Monitor word processing across your workspace."><State loading={loading} error={error} retry={load} empty={!data.length}/>{data.length>0&&<div className="card usage-view"><h3>Words processed</h3><div className="usage-chart">{data.map((x,i)=><div key={i}><span style={{height:`${Math.max(5,x.words/max*100)}%`}}/><small>{x.period}</small><b>{x.words.toLocaleString()}</b></div>)}</div></div>}<div className="card plan-detail"><div><p className="eyebrow">Current plan</p><h3>Workspace plan</h3><p>Usage resets at the start of your next allowance period.</p></div><span className="pill">Active</span></div></Page>}
-export function Settings(){const [name,setName]=useState("Alex Morgan"),[email,setEmail]=useState("alex@example.com"),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);return <Page title="Account settings" copy="Manage your profile, preferences, and security."><form className="card settings-form" onSubmit={e=>{e.preventDefault();setBusy(true);setSaved(false);setTimeout(()=>{setBusy(false);setSaved(true)},500)}}><div className="settings-title"><SettingsIcon/><div><h3>Profile & preferences</h3><p>Defaults can be changed for every rewrite.</p></div></div><div className="field-row"><label className="field"><span>Name</span><input required value={name} onChange={e=>setName(e.target.value)}/></label><label className="field"><span>Email</span><input required type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label></div><div className="check-list"><label><input type="checkbox" defaultChecked/> Email me when long jobs finish</label><label><input type="checkbox" defaultChecked/> Preserve citations by default</label><label><input type="checkbox"/> Use formal profile by default</label></div><div className="button-row"><button className="button primary" disabled={busy}>{busy?"Saving…":"Save settings"}</button>{saved&&<span className="saved"><Check size={14}/>Saved</span>}</div></form></Page>}
+import {
+  BarChart3,
+  Check,
+  FileText,
+  RefreshCw,
+  Settings as SettingsIcon,
+} from "lucide-react";
+import { useAuth } from "../auth/AuthContext";
+function useJobs() {
+  const [jobs, setJobs] = useState<ProcessingJob[]>([]),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  const load = () => {
+    setLoading(true);
+    setError("");
+    api
+      .jobs()
+      .then((x) => setJobs(x.jobs))
+      .catch((e) => setError(e instanceof Error ? e.message : "Unable to load"))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+  return { jobs, loading, error, load };
+}
+function State({
+  loading,
+  error,
+  retry,
+  empty,
+}: {
+  loading: boolean;
+  error: string;
+  retry: () => void;
+  empty: boolean;
+}) {
+  if (loading)
+    return (
+      <div className="inline-loading">
+        <span className="spinner" />
+        Loading workspace data…
+      </div>
+    );
+  if (error)
+    return (
+      <div className="error-state">
+        <div>
+          <strong>Could not load this view</strong>
+          <p>{error}</p>
+        </div>
+        <button className="button secondary" onClick={retry}>
+          <RefreshCw size={14} />
+          Retry
+        </button>
+      </div>
+    );
+  if (empty)
+    return (
+      <div className="small-empty">
+        <FileText />
+        <h3>Nothing here yet</h3>
+        <p>Completed operations will appear automatically.</p>
+        <Link to="/app/rewrite">Start a rewrite</Link>
+      </div>
+    );
+  return null;
+}
+function Page({
+  title,
+  copy,
+  children,
+}: {
+  title: string;
+  copy: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="workspace-page">
+      <header>
+        <p className="eyebrow">Workspace</p>
+        <h2>{title}</h2>
+        <p>{copy}</p>
+      </header>
+      {children}
+    </section>
+  );
+}
+export function Documents() {
+  const x = useJobs();
+  return (
+    <Page
+      title="Documents"
+      copy="Uploaded documents, formatting projects, and generated files."
+    >
+      <State
+        loading={x.loading}
+        error={x.error}
+        retry={x.load}
+        empty={!x.jobs.length}
+      />
+      {x.jobs.map((j) => (
+        <article className="inventory-row" key={j.id}>
+          <FileText />
+          <div>
+            <strong>{j.operation.replaceAll("_", " ")}</strong>
+            <span>
+              Updated {new Date(j.updatedAt).toLocaleString()} · attempt{" "}
+              {j.attempt}/{j.maxAttempts}
+            </span>
+            <progress value={j.progress} max="100" />
+          </div>
+          <span className={`job-state ${j.state}`}>
+            {j.state.replaceAll("_", " ")}
+          </span>
+        </article>
+      ))}
+    </Page>
+  );
+}
+export function Reports() {
+  const x = useJobs();
+  return (
+    <Page
+      title="Reports"
+      copy="Validation, rewrite, detection, and formatting diagnostics."
+    >
+      <div className="summary-grid">
+        <article>
+          <BarChart3 />
+          <strong>{x.jobs.length}</strong>
+          <span>Total operations</span>
+        </article>
+        <article>
+          <Check />
+          <strong>
+            {x.jobs.filter((j) => j.state === "completed").length}
+          </strong>
+          <span>Completed</span>
+        </article>
+        <article>
+          <RefreshCw />
+          <strong>
+            {x.jobs.filter((j) => j.state === "processing").length}
+          </strong>
+          <span>In progress</span>
+        </article>
+      </div>
+      <State
+        loading={x.loading}
+        error={x.error}
+        retry={x.load}
+        empty={!x.jobs.length}
+      />
+      {x.jobs.map((j) => (
+        <article className="report-row" key={j.id}>
+          <div>
+            <strong>{j.operation.replaceAll("_", " ")}</strong>
+            <span>{new Date(j.createdAt).toLocaleDateString()}</span>
+          </div>
+          <span>{j.progress}% processed</span>
+          <span className={`job-state ${j.state}`}>{j.state}</span>
+        </article>
+      ))}
+    </Page>
+  );
+}
+export function Usage() {
+  const [data, setData] = useState<Array<{ period: string; words: number }>>(
+      [],
+    ),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  const load = () => {
+    setLoading(true);
+    setError("");
+    api
+      .usageHistory()
+      .then((x) =>
+        setData(
+          x.months.map((item) => ({
+            period: item.month,
+            words: item.wordsProcessed,
+          })),
+        ),
+      )
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+  const max = Math.max(1, ...data.map((x) => x.words));
+  return (
+    <Page
+      title="Usage & plan"
+      copy="Monitor word processing across your workspace."
+    >
+      <State
+        loading={loading}
+        error={error}
+        retry={load}
+        empty={!data.length}
+      />
+      {data.length > 0 && (
+        <div className="card usage-view">
+          <h3>Words processed</h3>
+          <div className="usage-chart">
+            {data.map((x, i) => (
+              <div key={i}>
+                <span
+                  style={{ height: `${Math.max(5, (x.words / max) * 100)}%` }}
+                />
+                <small>{x.period}</small>
+                <b>{x.words.toLocaleString()}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="card plan-detail">
+        <div>
+          <p className="eyebrow">Current plan</p>
+          <h3>Workspace plan</h3>
+          <p>Usage resets at the start of your next allowance period.</p>
+        </div>
+        <span className="pill">Active</span>
+      </div>
+    </Page>
+  );
+}
+export function Settings() {
+  const { user, refreshSession } = useAuth(),
+    [name, setName] = useState(user?.displayName ?? ""),
+    [saved, setSaved] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setSaved(false);
+    setError("");
+    try {
+      await api.updateProfile(name.trim() || null);
+      await refreshSession();
+      setSaved(true);
+    } catch {
+      setError("Unable to save your profile.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Page
+      title="Account settings"
+      copy="Manage your profile, preferences, and security."
+    >
+      <form className="card settings-form" onSubmit={save}>
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="settings-title">
+          <SettingsIcon />
+          <div>
+            <h3>Profile & preferences</h3>
+            <p>Defaults can be changed for every rewrite.</p>
+          </div>
+        </div>
+        <div className="field-row">
+          <label className="field">
+            <span>Name</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Email</span>
+            <input readOnly type="email" value={user?.email ?? ""} />
+          </label>
+        </div>
+        <div className="check-list">
+          <label>
+            <input type="checkbox" defaultChecked /> Email me when long jobs
+            finish
+          </label>
+          <label>
+            <input type="checkbox" defaultChecked /> Preserve citations by
+            default
+          </label>
+          <label>
+            <input type="checkbox" /> Use formal profile by default
+          </label>
+        </div>
+        <div className="button-row">
+          <button className="button primary" disabled={busy}>
+            {busy ? "Saving…" : "Save settings"}
+          </button>
+          {saved && (
+            <span className="saved">
+              <Check size={14} />
+              Saved
+            </span>
+          )}
+        </div>
+      </form>
+    </Page>
+  );
+}

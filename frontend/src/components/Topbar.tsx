@@ -1,5 +1,6 @@
 import { Bell, CircleHelp, Menu } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 
 const titles: Record<string, string> = {
   "/app": "Overview",
@@ -17,6 +18,7 @@ export function Topbar({
   allowance?: { used: number; total: number };
 }) {
   const location = useLocation();
+  const { user } = useAuth();
   const remaining = allowance
     ? Math.max(allowance.total - allowance.used, 0).toLocaleString()
     : "—";
@@ -43,7 +45,10 @@ export function Topbar({
         <button className="icon-button" aria-label="Help">
           <CircleHelp size={20} />
         </button>
-        <button className="icon-button notification" aria-label="Notifications">
+        <button
+          className="icon-button notification"
+          aria-label={`Notifications for ${user?.displayName || user?.email}`}
+        >
           <Bell size={20} />
           <span className="notification-dot" />
         </button>

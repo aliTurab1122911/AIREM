@@ -90,9 +90,9 @@ test("forgot-password uses the public proxy path without revealing accounts", as
 });
 
 test("expired sessions are returned to login", async ({ page }) => {
-  await page.route("**/api/account/dashboard", (route) =>
+  await page.route("**/api/auth/session", (route) =>
     route.fulfill({ status: 401, json: { error: { code: "AUTH_REQUIRED" } } }),
   );
-  await page.goto("/app");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await page.goto("/app/documents?filter=recent");
+  await expect(page).toHaveURL(/\/login$/);
 });
