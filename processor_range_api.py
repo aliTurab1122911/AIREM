@@ -199,7 +199,14 @@ def range_edit_continue_json(job_id: str):
     edited_texts: Dict[str, str] = {}
     for chunk in mapping["chunks"]:
         lines = [[replacements[index]] for index in chunk["section_indices"]]
-        edited_texts[str(int(chunk["chunk_number"]))] = sections_to_text(lines)
+        approved_text = sections_to_text(lines)
+        key = str(int(chunk["chunk_number"]))
+        edited_texts[key] = approved_text
+        # The continued extraction deliberately starts from the reviewed text.
+        # Reinsertion coordinates remain the immutable original range sections.
+        chunk["text"] = approved_text
+        chunk["word_count"] = len(approved_text.split())
+    save_json(mapping, job["map_path"])
 
     prefill_path = Path(job["logs_dir"]) / "prefill_approved_range_edits.json"
     save_json({"edited_texts": edited_texts}, prefill_path)
