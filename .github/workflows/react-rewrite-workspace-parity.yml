@@ -1,0 +1,84 @@
+name: React Rewrite Workspace Parity
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/src/features/rewrite/**'
+      - 'frontend/src/pages/RewriteStudio.tsx'
+      - 'frontend/src/lib/api.ts'
+      - 'packages/contracts/**'
+      - 'services/gateway/src/adapters/**'
+      - 'e2e/tests/full/rewrite-workspace.spec.ts'
+      - '.github/workflows/react-rewrite-workspace-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-contract:
+    name: Rewrite workspace types and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Verify protected v21 processing source
+        run: python ci/verify_protected_processing.py
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run build --workspace @airem/contracts
+      - run: npm run typecheck --workspace @airem/gateway
+      - run: npm run typecheck --workspace airem-frontend
+      - run: npm test --workspace airem-frontend
+
+  real-browser-workflow:
+    name: Real DOCX rewrite browser E2E
+    runs-on: ubuntu-latest
+    needs: workspace-contract
+    env:
+      COMPOSE_PROJECT_NAME: airem-pr6-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_pr6
+      POSTGRES_PASSWORD: pr6-postgres-password
+      COOKIE_SECRET: pr6-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: pr6@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: mkdir -p deploy/tls && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build isolated production stack
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Apply service migrations
+        run: |
+          docker compose exec -T accounts node services/accounts/dist/migrate.js
+          docker compose exec -T gateway node services/gateway/dist/migrate.js
+      - name: Require public application health
+        run: curl --fail --silent --show-error --insecure --retry 10 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz >/dev/null
+      - name: Run upload through final-download workflow
+        run: npx playwright test tests/full/rewrite-workspace.spec.ts --config playwright.full.config.ts
+        working-directory: e2e
+      - name: Collect logs and remove isolated data
+        if: always()
+        run: |
+          docker compose ps --all > compose-status-pr6.log
+          docker compose logs --no-color > compose-pr6.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pr6-rewrite-workspace-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            compose-pr6.log
+            compose-status-pr6.log
