@@ -1,31 +1,52 @@
-"""Production composition wrapper for the AIREM v21 Flask processor.
+"""Production composition wrapper for the AIREM v21 Python domain processor.
 
-The legacy Jinja application remains intact. Production additionally registers a
-resource-oriented JSON compatibility API so React/gateway callers do not need to
-interpret rendered HTML responses.
+The protected v21 application/services remain authoritative for processing
+semantics. Production browser traffic does not expose the historical Jinja route
+tree: the Fastify gateway calls the structured /internal/v1 blueprints registered
+here, while artifact streaming remains an internal processor capability.
 """
 
+import json
 from pathlib import Path
 
 from flask import jsonify, request
 
-from app import app, get_job
+from app import app, get_job, list_profiles
 from processor_api import api_bp
 from processor_range_api import range_api_bp
-
 
 app.register_blueprint(api_bp)
 app.register_blueprint(range_api_bp)
 
 
+def _canonical_artifact_urls(value):
+    """Translate historical processor artifact paths to the public gateway API."""
+    if isinstance(value, str):
+        if value.startswith("/download/"):
+            return "/api/documents/download/" + value[len("/download/"):]
+        if value.startswith("/preview/"):
+            return "/api/documents/preview/" + value[len("/preview/"):]
+        return value
+    if isinstance(value, list):
+        return [_canonical_artifact_urls(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _canonical_artifact_urls(item) for key, item in value.items()}
+    return value
+
+
+@app.after_request
+def canonicalize_internal_json_artifacts(response):
+    """Ensure every structured processor consumer receives usable public URLs."""
+    if request.path.startswith("/internal/v1/") and response.is_json:
+        payload = response.get_json(silent=True)
+        if payload is not None:
+            response.set_data(json.dumps(_canonical_artifact_urls(payload), ensure_ascii=False, separators=(",", ":")))
+    return response
+
+
 @app.before_request
 def protect_immutable_json_extraction():
-    """Do not let an API client overwrite the fixed v21 extraction map.
-
-    A document job receives exactly one JSON extraction. A different selection
-    requires a new upload/job, keeping every later rewrite/cycle/reinsertion tied
-    to one immutable source mapping.
-    """
+    """Do not let an API client overwrite the fixed v21 extraction map."""
     if request.method != "POST":
         return None
     parts = request.path.strip("/").split("/")
@@ -48,7 +69,13 @@ def protect_immutable_json_extraction():
     }), 409
 
 
+@app.get("/internal/v1/rewrite/profiles")
+def rewrite_profiles_json():
+    """Expose the protected processor's profile registry through the JSON API."""
+    return jsonify({"profiles": list_profiles()})
+
+
 @app.get("/healthz")
 def healthz():
-    """Report that the Python processor imported and is serving requests."""
+    """Report that the internal v21 processor API imported and is serving."""
     return {"ok": True, "service": "airem-processor", "engine": "v21", "json_api": "internal/v1"}

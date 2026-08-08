@@ -1,12 +1,12 @@
-import { rangeEditDraftRequestSchema } from '@airem/contracts';
 import type { FastifyInstance } from 'fastify';
-import { registerAdapter, type AdapterHandler } from './types.js';
+import type { AdapterHandler } from './types.js';
 
-export const registerOpenAiRangeEditAdapter = (app: FastifyInstance, handler: AdapterHandler) => registerAdapter(app, handler, [
-  {
-    method: 'POST',
-    url: '/api/openai/ranges/:jobId/draft',
-    upstream: (r: any) => `/internal/v1/range-edit/${r.params.jobId}/draft`,
-    bodySchema: rangeEditDraftRequestSchema,
-  },
-]);
+/**
+ * PR10 cutover: the former /api/openai/ranges/:jobId/draft compatibility alias
+ * is intentionally no longer registered. OpenAI and manual range sessions both
+ * use the canonical /api/ranges/:jobId/draft route.
+ *
+ * Keep this no-op export for one release so downstream imports fail softly;
+ * the route itself is gone from the public application.
+ */
+export const registerOpenAiRangeEditAdapter = (_app: FastifyInstance, _handler: AdapterHandler) => undefined;

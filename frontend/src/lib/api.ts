@@ -88,6 +88,25 @@ function shouldAttachCsrf(url: string, path: string, method: string): boolean {
   return new URL(url, window.location.href).origin === window.location.origin;
 }
 
+/**
+ * Processor internals still create artifact links using their historical Flask
+ * route names. Production clients never expose those routes: normalize every
+ * processor-provided artifact URL to the authenticated gateway namespace at the
+ * single React API boundary.
+ */
+function canonicalArtifactUrls(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith("/download/")) return `/api/documents/download/${value.slice("/download/".length)}`;
+    if (value.startsWith("/preview/")) return `/api/documents/preview/${value.slice("/preview/".length)}`;
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(canonicalArtifactUrls);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, canonicalArtifactUrls(item)]));
+  }
+  return value;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -117,7 +136,8 @@ export async function request<T>(
     throw new ApiError(processorMessage || `Request failed (${response.status})`, response.status, details);
   }
   if (response.status === 204) return undefined as T;
-  const value: unknown = await response.json();
+  const raw: unknown = await response.json();
+  const value = canonicalArtifactUrls(raw);
   return schema ? schema.parse(value) : value as T;
 }
 
@@ -148,53 +168,24 @@ export const api = {
     body.append("docx_file", file);
     return request("/api/documents/upload", { method: "POST", body }, documentUploadResponseSchema);
   },
-  documentJob: (id: string): Promise<DocumentJobResponse> =>
-    request(`/api/documents/jobs/${id}`, {}, documentJobResponseSchema),
-  extractRanges: (id: string, payload: RangeSelectionRequest): Promise<ExtractionResponse> =>
-    request(`/api/ranges/${id}/extract`, { method: "POST", body: JSON.stringify(payload) }, extractionResponseSchema),
-  uploadTurnitin: (id: string, file: File): Promise<TurnitinUploadResponse> => {
-    const body = new FormData();
-    body.append("turnitin_pdf", file);
-    return request(`/api/turnitin/${id}`, { method: "POST", body }, turnitinUploadResponseSchema);
-  },
-  rangeEditConfiguration: (): Promise<RangeEditConfigurationResponse> =>
-    request("/api/ranges/configuration", {}, rangeEditConfigurationResponseSchema),
-  draftRangeEdits: (id: string, payload: RangeEditDraftRequest): Promise<RangeEditDraftResponse> =>
-    request(`/api/ranges/${id}/draft`, { method: "POST", body: JSON.stringify(payload) }, rangeEditDraftResponseSchema),
-  exportRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditExportResponse> =>
-    request(`/api/ranges/${id}/export`, { method: "POST", body: JSON.stringify(payload) }, rangeEditExportResponseSchema),
-  continueRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditContinueResponse> =>
-    request(`/api/ranges/${id}/continue`, { method: "POST", body: JSON.stringify(payload) }, rangeEditContinueResponseSchema),
+  documentJob: (id: string): Promise<DocumentJobResponse> => request(`/api/documents/jobs/${id}`, {}, documentJobResponseSchema),
+  extractRanges: (id: string, payload: RangeSelectionRequest): Promise<ExtractionResponse> => request(`/api/ranges/${id}/extract`, { method: "POST", body: JSON.stringify(payload) }, extractionResponseSchema),
+  uploadTurnitin: (id: string, file: File): Promise<TurnitinUploadResponse> => { const body = new FormData(); body.append("turnitin_pdf", file); return request(`/api/turnitin/${id}`, { method: "POST", body }, turnitinUploadResponseSchema); },
+  rangeEditConfiguration: (): Promise<RangeEditConfigurationResponse> => request("/api/ranges/configuration", {}, rangeEditConfigurationResponseSchema),
+  draftRangeEdits: (id: string, payload: RangeEditDraftRequest): Promise<RangeEditDraftResponse> => request(`/api/ranges/${id}/draft`, { method: "POST", body: JSON.stringify(payload) }, rangeEditDraftResponseSchema),
+  exportRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditExportResponse> => request(`/api/ranges/${id}/export`, { method: "POST", body: JSON.stringify(payload) }, rangeEditExportResponseSchema),
+  continueRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditContinueResponse> => request(`/api/ranges/${id}/continue`, { method: "POST", body: JSON.stringify(payload) }, rangeEditContinueResponseSchema),
   rewriteProfiles: () => request<Record<string, unknown>>("/api/rewrite/profiles"),
-  rewriteDocument: (id: string, payload: RewriteRequest): Promise<RewriteResponse> =>
-    request(`/api/rewrite/${id}`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
-  rewriteDocumentCycle: (id: string, payload: RewriteCycleRequest): Promise<RewriteResponse> =>
-    request(`/api/rewrite/${id}/cycles`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
-  validateDocument: (id: string, payload: ValidationRequest): Promise<ValidationResponse> =>
-    request(`/api/validation/${id}`, { method: "POST", body: JSON.stringify(payload) }, validationResponseSchema),
-  reinsertDocument: (id: string, payload: ReinsertionRequest): Promise<ReinsertionResponse> =>
-    request(`/api/reinsertion/${id}`, { method: "POST", body: JSON.stringify(payload) }, reinsertionResponseSchema),
-  rewriteText: (payload: TextRewriteRequest): Promise<TextRewriteResponse> =>
-    request("/api/text/rewrite", { method: "POST", body: JSON.stringify(payload) }, textRewriteResponseSchema),
-  detectText: (text: string): Promise<DetectionResponse> =>
-    request("/api/detection/text", { method: "POST", body: JSON.stringify({ text }) }, detectionResponseSchema),
-  detectFile: (file: File): Promise<DetectionFileResponse> => {
-    const body = new FormData();
-    body.append("file", file);
-    return request("/api/detection/file", { method: "POST", body }, detectionFileResponseSchema);
-  },
-  analyseFormatting: (file: File): Promise<FormattingAnalysisResponse> => {
-    const body = new FormData();
-    body.append("docx_file", file);
-    return request("/api/formatting/analyse", { method: "POST", body }, formattingAnalysisResponseSchema);
-  },
-  applyFormatting: (id: string, settings: FormattingApplyRequest["settings"]): Promise<FormattingApplyResponse> =>
-    request(`/api/formatting/apply/${id}`, {
-      method: "POST",
-      body: JSON.stringify({ settings } satisfies FormattingApplyRequest),
-    }, formattingApplyResponseSchema),
-  downloadUrl: (id: string, filename: string) =>
-    `${API_BASE_URL}/api/documents/download/${id}/${encodeURIComponent(filename)}`,
+  rewriteDocument: (id: string, payload: RewriteRequest): Promise<RewriteResponse> => request(`/api/rewrite/${id}`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
+  rewriteDocumentCycle: (id: string, payload: RewriteCycleRequest): Promise<RewriteResponse> => request(`/api/rewrite/${id}/cycles`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
+  validateDocument: (id: string, payload: ValidationRequest): Promise<ValidationResponse> => request(`/api/validation/${id}`, { method: "POST", body: JSON.stringify(payload) }, validationResponseSchema),
+  reinsertDocument: (id: string, payload: ReinsertionRequest): Promise<ReinsertionResponse> => request(`/api/reinsertion/${id}`, { method: "POST", body: JSON.stringify(payload) }, reinsertionResponseSchema),
+  rewriteText: (payload: TextRewriteRequest): Promise<TextRewriteResponse> => request("/api/text/rewrite", { method: "POST", body: JSON.stringify(payload) }, textRewriteResponseSchema),
+  detectText: (text: string): Promise<DetectionResponse> => request("/api/detection/text", { method: "POST", body: JSON.stringify({ text }) }, detectionResponseSchema),
+  detectFile: (file: File): Promise<DetectionFileResponse> => { const body = new FormData(); body.append("file", file); return request("/api/detection/file", { method: "POST", body }, detectionFileResponseSchema); },
+  analyseFormatting: (file: File): Promise<FormattingAnalysisResponse> => { const body = new FormData(); body.append("docx_file", file); return request("/api/formatting/analyse", { method: "POST", body }, formattingAnalysisResponseSchema); },
+  applyFormatting: (id: string, settings: FormattingApplyRequest["settings"]): Promise<FormattingApplyResponse> => request(`/api/formatting/apply/${id}`, { method: "POST", body: JSON.stringify({ settings } satisfies FormattingApplyRequest) }, formattingApplyResponseSchema),
+  downloadUrl: (id: string, filename: string) => `${API_BASE_URL}/api/documents/download/${id}/${encodeURIComponent(filename)}`,
   accountDashboard: () => request<import("../features/dashboard/types").AccountDashboard>("/api/account/dashboard"),
   usageHistory: () => request<import("../features/dashboard/types").AccountDashboard["usageHistory"]>("/api/account/usage-history"),
   notifications: () => request<import("../features/dashboard/types").AccountDashboard["notifications"]>("/api/account/notifications"),
@@ -213,4 +204,4 @@ export const api = {
   deleteAccount: () => request("/api/account", { method: "DELETE" }),
 };
 
-export { API_BASE_URL };
+export { API_BASE_URL, canonicalArtifactUrls };
