@@ -5,8 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { request as undiciRequest, type Dispatcher } from 'undici';
 import type { Config } from './config.js';
-import type { GatewayStore } from './store.js';
+import { IdempotencyConflictError, type GatewayStore } from './store.js';
 import type { JobQueue } from './jobs.js';
+import { queuedProcessorCall } from './orchestration.js';
+import { usageWords } from './usage.js';
 import {
   registerDetectionAdapter, registerDocumentAdapter, registerDownloadAdapter,
   registerFormattingAdapter, registerOpenAiRangeEditAdapter, registerRangeAdapter,
@@ -15,7 +17,6 @@ import {
 } from './adapters/index.js';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
-const MUTATIONS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const BODYLESS = new Set(['GET', 'HEAD']);
 const RESPONSE_METADATA_LIMIT = 2 * 1024 * 1024;
 
@@ -60,10 +61,6 @@ async function validateMultipart(payload: NodeJS.ReadableStream, field: string, 
         if (!extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
       }
     }
-
-    // Keep only a boundary/header tail for split-header detection. The durable
-    // booleans above retain facts already discovered, so large first chunks can
-    // no longer erase the field/filename state before validation completes.
     if (headerWindow.length > 16 * 1024) headerWindow = headerWindow.slice(-16 * 1024);
   }
 
@@ -96,11 +93,7 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
   const app = Fastify({ logger: { redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body', 'res.body'] }, disableRequestLogging: true, bodyLimit: cfg.UPLOAD_MAX_BYTES, requestIdHeader: false, genReqId: () => randomUUID() });
   await app.register(cookie, { secret: cfg.COOKIE_SECRET });
   const expensiveRateLimit = Math.max(1, Math.floor(cfg.RATE_LIMIT_MAX / 6));
-  await app.register(rateLimit, {
-    global: true,
-    max: cfg.RATE_LIMIT_MAX,
-    timeWindow: '1 minute',
-  });
+  await app.register(rateLimit, { global: true, max: cfg.RATE_LIMIT_MAX, timeWindow: '1 minute' });
   app.addContentTypeParser('*', (_request, payload, done) => done(null, payload));
   const dispatch: Upstream = upstream ?? (async args => {
     const response = await undiciRequest(new URL(args.path, cfg.FLASK_ORIGIN), {
@@ -115,12 +108,49 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
 
   const authenticate=async(request:FastifyRequest,reply:any)=>{const session=request.cookies.session;const userId=session&&await store.sessionUser(session);if(!userId){reply.status(401).send({error:{code:'AUTH_REQUIRED'},requestId:request.id});return;}return userId;};
   const readJson=async(request:FastifyRequest)=>{const chunks:Buffer[]=[];for await(const chunk of request.body as AsyncIterable<Buffer>)chunks.push(Buffer.from(chunk));return JSON.parse(Buffer.concat(chunks).toString('utf8'));};
-  const allowedOperations=new Set(['text_rewrite','text_detection','document_rewrite','document_validation','formatting_apply']);
-  app.post('/api/jobs',{config:{rateLimit:{max:expensiveRateLimit,timeWindow:'1 minute'}}},async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const key=request.headers['idempotency-key'];if(typeof key!=='string'||key.length<8||key.length>200)return reply.status(400).send({error:{code:'IDEMPOTENCY_KEY_REQUIRED'},requestId:request.id});let body:any;try{body=await readJson(request);}catch{return reply.status(400).send({error:{code:'INVALID_JSON'},requestId:request.id});}if(!body||!allowedOperations.has(body.operation)||typeof body.payload!=='object')return reply.status(422).send({error:{code:'VALIDATION_ERROR'},requestId:request.id});if(!store.createJob||!queue)return reply.status(503).send({error:{code:'QUEUE_UNAVAILABLE'},requestId:request.id});const made=await store.createJob(userId,key,body.operation,body.payload,cfg.USER_JOB_CONCURRENCY,cfg.JOB_TTL_HOURS);if(!made)return reply.status(429).send({error:{code:'USER_CONCURRENCY_LIMIT'},requestId:request.id});if(made.created)await queue.add(made.job.id);return reply.status(made.created?202:200).send({job:made.job,idempotentReplay:!made.created});});
+
+  app.post('/api/jobs',{config:{rateLimit:{max:expensiveRateLimit,timeWindow:'1 minute'}}},async(request,reply)=>{
+    const userId=await authenticate(request,reply);if(!userId)return;
+    const key=request.headers['idempotency-key'];
+    if(typeof key!=='string'||key.length<8||key.length>200)return reply.status(400).send({error:{code:'IDEMPOTENCY_KEY_REQUIRED'},requestId:request.id});
+    let body:any;try{body=await readJson(request);}catch{return reply.status(400).send({error:{code:'INVALID_JSON'},requestId:request.id});}
+    let call;try{call=queuedProcessorCall(body?.operation,body?.payload);}catch{return reply.status(422).send({error:{code:'VALIDATION_ERROR'},requestId:request.id});}
+    if(call.sourceJobId&&!await store.owns(userId,call.sourceJobId))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});
+    if(!store.createJob||!queue||!await queue.isReady())return reply.status(503).send({error:{code:'QUEUE_UNAVAILABLE'},requestId:request.id});
+    let made;
+    try{made=await store.createJob(userId,key,call.operation,body.payload,cfg.USER_JOB_CONCURRENCY,cfg.JOB_TTL_HOURS);}
+    catch(error){if(error instanceof IdempotencyConflictError)return reply.status(409).send({error:{code:error.code,message:error.message},requestId:request.id});throw error;}
+    if(!made)return reply.status(429).send({error:{code:'USER_CONCURRENCY_LIMIT'},requestId:request.id});
+    if(made.created){
+      try{await queue.add(made.job.id);}
+      catch{await store.markEnqueueFailed?.(userId,made.job.id);return reply.status(503).send({error:{code:'QUEUE_ENQUEUE_FAILED'},requestId:request.id});}
+    }
+    return reply.status(made.created?202:200).send({job:made.job,idempotentReplay:!made.created});
+  });
   app.get('/api/jobs',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;return{jobs:await store.listJobs?.(userId)??[]};});
   app.get('/api/jobs/:id',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;const job=await store.getJob?.(userId,id);return job?{job}:reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});});
-  app.delete('/api/jobs/:id',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;if(!await store.getJob?.(userId,id))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});if(!await queue?.cancel(id)||!await store.cancelJob?.(userId,id))return reply.status(409).send({error:{code:'JOB_ALREADY_STARTED'},requestId:request.id});return reply.status(202).send({ok:true});});
-  app.get('/api/jobs/:id/events',async(request,reply)=>{const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;if(!await store.getJob?.(userId,id))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});reply.hijack();reply.raw.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache, no-transform','connection':'keep-alive'});let previous='';for(let i=0;i<20&&!reply.raw.destroyed;i++){const job=await store.getJob?.(userId,id);const data=JSON.stringify(job);if(data!==previous){reply.raw.write(`event: progress\ndata: ${data}\n\n`);previous=data;}if(!job||['completed','failed','expired'].includes(job.state))break;await new Promise(r=>setTimeout(r,1000));}reply.raw.end();});
+  app.delete('/api/jobs/:id',async(request,reply)=>{
+    const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;
+    if(!store.requestCancellation)return reply.status(503).send({error:{code:'QUEUE_UNAVAILABLE'},requestId:request.id});
+    const outcome=await store.requestCancellation(userId,id);
+    if(outcome==='missing')return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});
+    if(outcome==='terminal')return reply.status(409).send({error:{code:'JOB_ALREADY_FINISHED'},requestId:request.id});
+    try{await queue?.cancel(id);}catch{/* database cancellation remains authoritative */}
+    return reply.status(202).send({ok:true,cancellation:outcome});
+  });
+  app.get('/api/jobs/:id/events',async(request,reply)=>{
+    const userId=await authenticate(request,reply);if(!userId)return;const id=(request.params as any).id;
+    if(!await store.getJob?.(userId,id))return reply.status(404).send({error:{code:'JOB_NOT_FOUND'},requestId:request.id});
+    reply.hijack();reply.raw.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache, no-transform','connection':'keep-alive'});reply.raw.write('retry: 1000\n\n');
+    let previous='';
+    for(let i=0;i<20&&!reply.raw.destroyed;i++){
+      const job=await store.getJob?.(userId,id);const data=JSON.stringify(job);
+      if(data!==previous){reply.raw.write(`id: ${job?.updatedAt??i}\nevent: progress\ndata: ${data}\n\n`);previous=data;}
+      if(!job||['completed','failed','expired','review_required'].includes(job.state))break;
+      await new Promise(r=>setTimeout(r,1000));
+    }
+    reply.raw.end();
+  });
 
   app.setErrorHandler((error, request, reply) => {
     const failure = error as Error & { statusCode?: number };
@@ -167,17 +197,7 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
     } catch (error) {
       const failureClass = upstreamFailureClass(error);
       const failure = error as { name?: string; code?: string };
-      request.log.error({
-        requestId: request.id,
-        userId,
-        method: request.method,
-        path: request.routeOptions.url,
-        upstreamPath,
-        failureClass,
-        errorName: failure.name ?? 'Error',
-        errorCode: failure.code ?? null,
-        durationMs: Date.now() - started,
-      }, 'processor upstream request failed');
+      request.log.error({ requestId: request.id, userId, method: request.method, path: request.routeOptions.url, upstreamPath, failureClass, errorName: failure.name ?? 'Error', errorCode: failure.code ?? null, durationMs: Date.now() - started }, 'processor upstream request failed');
       const code = failureClass === 'timeout' ? 'PROCESSOR_TIMEOUT' : 'PROCESSOR_UNAVAILABLE';
       return reply.status(502).send({ error: { code }, requestId: request.id });
     }
@@ -197,11 +217,13 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
     for await (const raw of response.body as AsyncIterable<Buffer>) { const chunk = Buffer.from(raw); size += chunk.length; if (size > RESPONSE_METADATA_LIMIT) throw Object.assign(new Error('upstream metadata too large'), { statusCode: 502 }); chunks.push(chunk); }
     const body = Buffer.concat(chunks);
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      const discovered = body.toString('utf8').match(UUID)?.[0]?.toLowerCase() ?? String(response.headers.location ?? '').match(UUID)?.[0]?.toLowerCase();
+      const bodyText=body.toString('utf8');
+      const discovered = bodyText.match(UUID)?.[0]?.toLowerCase() ?? String(response.headers.location ?? '').match(UUID)?.[0]?.toLowerCase();
       if (!jobId && discovered) await store.claim(userId, discovered);
-      if (MUTATIONS.has(request.method)) {
-        const words = Number(response.headers['x-airem-words-processed'] ?? 0);
-        if (words > 0 && !await store.addUsage(userId, words)) return reply.status(403).send({ error: { code: 'WORD_ALLOWANCE_EXCEEDED' }, requestId: request.id });
+      if(route.usageKind){
+        let parsed:unknown;try{parsed=JSON.parse(bodyText);}catch{parsed=undefined;}
+        const words=usageWords(route.usageKind,parsed);
+        if(words>0&&!await store.addUsage(userId,words))return reply.status(403).send({error:{code:'WORD_ALLOWANCE_EXCEEDED'},requestId:request.id});
       }
     }
     request.log.info({ requestId: request.id, userId, method: request.method, path: request.routeOptions.url, statusCode: response.statusCode, durationMs: Date.now() - started }, 'gateway access');
@@ -222,11 +244,13 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
     try {
       const response = await dispatch({ method: 'GET', path: '/healthz', headers: { 'x-request-id': randomUUID() } });
       for await (const _chunk of response.body as AsyncIterable<Buffer>) { /* drain */ }
-      if (response.statusCode < 200 || response.statusCode >= 300) return reply.status(503).send({ ok: false, service: 'airem-gateway', processor: 'not-ready' });
-      return { ok: true, service: 'airem-gateway', processor: 'ready' };
+      const processorReady=response.statusCode>=200&&response.statusCode<300;
+      const workersAvailable=queue?await queue.isReady():false;
+      if(!processorReady||!workersAvailable)return reply.status(503).send({ok:false,service:'airem-gateway',processor:processorReady?'ready':'not-ready',queue:{workersAvailable}});
+      return {ok:true,service:'airem-gateway',processor:'ready',queue:{workersAvailable:true}};
     } catch (error) {
-      app.log.warn({ failureClass: upstreamFailureClass(error) }, 'processor readiness check failed');
-      return reply.status(503).send({ ok: false, service: 'airem-gateway', processor: 'unreachable' });
+      app.log.warn({ failureClass: upstreamFailureClass(error) }, 'gateway readiness check failed');
+      return reply.status(503).send({ ok: false, service: 'airem-gateway', processor: 'unreachable', queue: { workersAvailable: false } });
     }
   });
   return app;
