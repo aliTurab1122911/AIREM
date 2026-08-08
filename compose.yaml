@@ -101,7 +101,7 @@ services:
   worker:
     <<: *service-defaults
     build: {context: ., dockerfile: services/gateway/Dockerfile}
-    command: [node, dist/worker.js]
+    command: [node, services/gateway/dist/worker.js]
     environment:
       <<: *node-environment
       FLASK_ORIGIN: http://processor:5000
