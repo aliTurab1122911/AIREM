@@ -164,8 +164,8 @@ host; production certificates should come from your ingress or ACME provider.
 
    ```bash
    docker compose up -d postgres redis
-   docker compose run --rm accounts node dist/migrate.js
-   docker compose run --rm gateway node dist/migrate.js
+   docker compose run --rm accounts node services/accounts/dist/migrate.js
+   docker compose run --rm gateway node services/gateway/dist/migrate.js
    docker compose up -d
    docker compose ps
    ```
@@ -245,8 +245,8 @@ schema remains compatible.
 ```bash
 git pull --ff-only
 docker compose build --pull
-docker compose run --rm accounts node dist/migrate.js
-docker compose run --rm gateway node dist/migrate.js
+docker compose run --rm accounts node services/accounts/dist/migrate.js
+docker compose run --rm gateway node services/gateway/dist/migrate.js
 docker compose up -d --remove-orphans
 docker image prune -f
 ```
