@@ -63,8 +63,9 @@ try {
 
   const bytes = await readFile(fixture);
   if (bytes.length <= 2 * 1024 * 1024) throw new Error(`large DOCX fixture is only ${bytes.length} bytes`);
+  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const form = new FormData();
-  form.set('docx_file', new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'transport-large.docx');
+  form.set('docx_file', new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'transport-large.docx');
   form.set('max_words', '4500');
   const upload = await fetch('http://127.0.0.1:4100/api/documents/upload', {
     method: 'POST',
