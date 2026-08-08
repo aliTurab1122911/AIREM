@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import type { DocumentBlock, DocumentInventory, SelectionMode, VisualElement, VisualRange } from "@airem/contracts";
 import { Check, Highlighter, RotateCcw, X } from "lucide-react";
+import "./selection.css";
 import {
   blockIdsForAutomaticPreview,
   blockIdsForOrderedRange,
@@ -84,11 +85,15 @@ export function DocumentSelection(props: Props) {
 
   const addBrowserSelection = () => {
     if (props.locked) return;
-    const range = browserSelectionToVisualRange(window.getSelection(), props.inventory);
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const selectedRange = selection.getRangeAt(0);
+    if (previewRef.current && !previewRef.current.contains(selectedRange.commonAncestorContainer)) return;
+    const range = browserSelectionToVisualRange(selection, props.inventory);
     if (!range) return;
     props.onVisualRangesChange(dedupeVisualRanges([...props.visualRanges, range]));
     props.onModeChange("visual");
-    window.getSelection()?.removeAllRanges();
+    selection.removeAllRanges();
   };
 
   const page = props.inventory.page;
