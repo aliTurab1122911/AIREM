@@ -19,7 +19,10 @@ services:
     volumes:
       - ${TLS_CERT_PATH:-./deploy/tls/tls.crt}:/run/tls/tls.crt:ro
       - ${TLS_KEY_PATH:-./deploy/tls/tls.key}:/run/tls/tls.key:ro
-    tmpfs: [/var/cache/nginx:uid=101,gid=101,mode=0750, /var/run:uid=101,gid=101,mode=0750, /tmp:uid=101,gid=101,mode=0750]
+    tmpfs:
+      - "/var/cache/nginx:uid=101,gid=101,mode=0750"
+      - "/var/run:uid=101,gid=101,mode=0750"
+      - "/tmp:uid=101,gid=101,mode=0750"
     depends_on:
       accounts: {condition: service_healthy}
       gateway: {condition: service_healthy}
@@ -41,7 +44,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
     expose: ["4000"]
-    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    tmpfs:
+      - "/tmp:uid=1000,gid=1000,mode=0700"
     depends_on: {postgres: {condition: service_healthy}}
     networks: [backend]
     healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
@@ -58,7 +62,8 @@ services:
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-60}
     expose: ["4000"]
-    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    tmpfs:
+      - "/tmp:uid=1000,gid=1000,mode=0700"
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -67,27 +72,14 @@ services:
     healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
     deploy: {resources: {limits: {cpus: "1.0", memory: 512M}}}
 
-  documents-init:
-    build: {context: ., dockerfile: Dockerfile.python}
-    user: "0:0"
-    command: [chown, -R, "999:999", /app/workspace]
-    restart: "no"
-    network_mode: none
-    read_only: true
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    volumes: [documents:/app/workspace]
-
   processor:
     <<: *service-defaults
     build: {context: ., dockerfile: Dockerfile.python}
     environment: {OPENAI_API_KEY: "${OPENAI_API_KEY:-}", OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5-mini}", PROCESSOR_WORKERS: "${PROCESSOR_WORKERS:-2}"}
     expose: ["5000"]
     volumes: [documents:/app/workspace]
-    tmpfs: [/tmp:uid=999,gid=999,mode=0700]
-    depends_on:
-      documents-init: {condition: service_completed_successfully}
+    tmpfs:
+      - "/tmp:uid=999,gid=999,mode=0700"
     networks: [backend]
     healthcheck: {test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"], interval: 20s, timeout: 5s, retries: 5, start_period: 30s}
     deploy: {resources: {limits: {cpus: "2.0", memory: 2G}}}
@@ -103,7 +95,8 @@ services:
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       JOB_TTL_HOURS: ${JOB_TTL_HOURS:-72}
       TEMP_UPLOAD_ROOT: /tmp/airem-uploads
-    tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
+    tmpfs:
+      - "/tmp:uid=1000,gid=1000,mode=0700"
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -126,7 +119,8 @@ services:
     restart: unless-stopped
     read_only: true
     command: [redis-server, --save, "", --appendonly, "no", --maxmemory, 256mb, --maxmemory-policy, noeviction]
-    tmpfs: [/data:uid=999,gid=999,mode=0700]
+    tmpfs:
+      - "/data:uid=999,gid=999,mode=0700"
     networks: [backend]
     healthcheck: {test: [CMD, redis-cli, ping], interval: 10s, timeout: 3s, retries: 10}
     deploy: {resources: {limits: {cpus: "0.50", memory: 320M}}}
