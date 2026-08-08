@@ -126,6 +126,8 @@ export function Auth() {
                     <input
                       name="name"
                       autoComplete="name"
+                      minLength={DISPLAY_NAME_MIN_LENGTH}
+                      maxLength={DISPLAY_NAME_MAX_LENGTH}
                       required
                       placeholder="Alex Morgan"
                     />
@@ -161,9 +163,10 @@ export function Auth() {
                       autoComplete={
                         isLogin ? "current-password" : "new-password"
                       }
-                      minLength={8}
+                      minLength={PASSWORD_MIN_LENGTH}
+                      maxLength={PASSWORD_MAX_LENGTH}
                       required
-                      placeholder="At least 8 characters"
+                      placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
                     />
                   </div>
                 </label>

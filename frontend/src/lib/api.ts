@@ -232,10 +232,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: (name: string, email: string, password: string) =>
+  register: (displayName: string, email: string, password: string) =>
     request("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ displayName, email, password }),
     }),
   forgotPassword: (email: string) =>
     request("/api/auth/password-reset/request", {

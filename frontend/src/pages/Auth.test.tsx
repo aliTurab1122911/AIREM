@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Auth } from "./Auth";
+import { PASSWORD_MIN_LENGTH, registrationSchema } from "@airem/contracts";
 
 vi.mock("../auth/AuthContext", () => ({
   useAuth: () => ({ refreshSession: vi.fn() }),
@@ -10,6 +11,35 @@ vi.mock("../auth/AuthContext", () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe("authentication forms", () => {
+  it("uses the server registration password constraint and matching guidance", () => {
+    render(
+      <MemoryRouter initialEntries={["/register"]}>
+        <Auth />
+      </MemoryRouter>,
+    );
+
+    const password = screen.getByLabelText(/Password/);
+    expect(password).toHaveAttribute("minlength", String(PASSWORD_MIN_LENGTH));
+    expect(password).toHaveAttribute(
+      "placeholder",
+      `At least ${PASSWORD_MIN_LENGTH} characters`,
+    );
+    expect(
+      registrationSchema.safeParse({
+        displayName: "Alex Morgan",
+        email: "alex@example.test",
+        password: "x".repeat(PASSWORD_MIN_LENGTH - 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      registrationSchema.safeParse({
+        displayName: "Alex Morgan",
+        email: "alex@example.test",
+        password: "x".repeat(PASSWORD_MIN_LENGTH),
+      }).success,
+    ).toBe(true);
+  });
+
   it("reports an invalid login accessibly", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("{}", { status: 401 }),

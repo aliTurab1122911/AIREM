@@ -14,6 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@airem/contracts": "file:../packages/contracts",
     "@fontsource-variable/inter": "^5.2.6",
     "@fontsource-variable/space-grotesk": "^5.2.10",
     "react": "latest",
