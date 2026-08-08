@@ -6,6 +6,7 @@ tree: the Fastify gateway calls the structured /internal/v1 blueprints registere
 here, while artifact streaming remains an internal processor capability.
 """
 
+import json
 from pathlib import Path
 
 from flask import jsonify, request
@@ -16,6 +17,31 @@ from processor_range_api import range_api_bp
 
 app.register_blueprint(api_bp)
 app.register_blueprint(range_api_bp)
+
+
+def _canonical_artifact_urls(value):
+    """Translate historical processor artifact paths to the public gateway API."""
+    if isinstance(value, str):
+        if value.startswith("/download/"):
+            return "/api/documents/download/" + value[len("/download/"):]
+        if value.startswith("/preview/"):
+            return "/api/documents/preview/" + value[len("/preview/"):]
+        return value
+    if isinstance(value, list):
+        return [_canonical_artifact_urls(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _canonical_artifact_urls(item) for key, item in value.items()}
+    return value
+
+
+@app.after_request
+def canonicalize_internal_json_artifacts(response):
+    """Ensure every structured processor consumer receives usable public URLs."""
+    if request.path.startswith("/internal/v1/") and response.is_json:
+        payload = response.get_json(silent=True)
+        if payload is not None:
+            response.set_data(json.dumps(_canonical_artifact_urls(payload), ensure_ascii=False, separators=(",", ":")))
+    return response
 
 
 @app.before_request
