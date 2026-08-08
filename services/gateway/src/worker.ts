@@ -1,21 +1,134 @@
-import { Worker, UnrecoverableError } from 'bullmq';
+import { Worker, UnrecoverableError, type Job } from 'bullmq';
 import pg from 'pg';
 import { request } from 'undici';
 import { readdir, rm, stat } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { loadConfig } from './config.js';
 import { JOB_QUEUE, redisConnection } from './jobs.js';
+import { queuedProcessorCall } from './orchestration.js';
+import {
+  claimOrchestrationJob,
+  completeOrchestrationJob,
+  failOrRetryOrchestrationJob,
+  setOrchestrationProgress,
+} from './orchestration-db.js';
+import { usageWords } from './usage.js';
 
-const cfg=loadConfig(),pool=new pg.Pool({connectionString:cfg.DATABASE_URL});
-const routeFor=(operation:string,payload:any)=>{const source=payload?.source_job_id;if(operation==='text_rewrite')return'/api/text/rewrite';if(operation==='text_detection')return'/api/detect-text';if(typeof source!=='string')throw Object.assign(new Error('source_job_id is required'),{transient:false});return operation==='document_rewrite'?`/rewrite/${source}`:operation==='document_validation'?`/validate/${source}`:`/formatting/apply/${source}`;};
-const safeMessage=(status?:number)=>status===429?'The processing service is busy; the job will be retried.':'We could not process this job. Please try again later.';
+const cfg = loadConfig();
+const pool = new pg.Pool({ connectionString: cfg.DATABASE_URL });
+const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-async function run(id:string,attempt:number){const claimed=await pool.query("UPDATE orchestration_jobs SET state='processing',progress=10,attempt=$2,started_at=coalesce(started_at,now()),updated_at=now() WHERE id=$1 AND state IN ('queued','processing') AND cancel_requested_at IS NULL RETURNING *",[id,attempt]);const job=claimed.rows[0];if(!job)return;
- try{const response=await request(new URL(routeFor(job.operation,job.request),cfg.FLASK_ORIGIN),{method:'POST',headers:{'content-type':'application/json','x-orchestration-job-id':id},body:JSON.stringify(job.request),headersTimeout:cfg.UPSTREAM_HEADERS_TIMEOUT_MS,bodyTimeout:cfg.UPSTREAM_BODY_TIMEOUT_MS});const raw=await response.body.text();if(response.statusCode<200||response.statusCode>=300){const transient=[408,425,429,500,502,503,504].includes(response.statusCode);throw Object.assign(new Error(`processor status ${response.statusCode}`),{transient,status:response.statusCode});}let result:unknown;try{result=JSON.parse(raw);}catch{result={content:raw};}const words=Number(response.headers['x-airem-words-processed']??0);const review=Boolean((result as any)?.review_required);const client=await pool.connect();try{await client.query('BEGIN');await client.query("INSERT INTO orchestration_outputs(job_id,user_id,metadata,expires_at) VALUES($1,$2,$3,now()+make_interval(hours=>$4)) ON CONFLICT(job_id) DO NOTHING",[id,job.user_id,result,cfg.JOB_TTL_HOURS]);if(Number.isSafeInteger(words)&&words>0){const charged=await client.query('INSERT INTO orchestration_usage_charges(job_id,user_id,words) VALUES($1,$2,$3) ON CONFLICT(job_id) DO NOTHING RETURNING words',[id,job.user_id,words]);if(charged.rowCount)await client.query('UPDATE account_usage SET words_used=words_used+$2,updated_at=now() WHERE user_id=$1',[job.user_id,words]);}await client.query("UPDATE orchestration_jobs SET state=$2,progress=100,result=$3,word_count=$4,finished_at=now(),updated_at=now(),output_id=(SELECT id FROM orchestration_outputs WHERE job_id=$1) WHERE id=$1",[id,review?'review_required':'completed',result,words||null]);await client.query('COMMIT');}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
- }catch(error:any){const final=!error.transient||attempt>=3;await pool.query("UPDATE orchestration_jobs SET state=CASE WHEN $2 THEN 'failed'::orchestration_job_state ELSE 'queued'::orchestration_job_state END,progress=CASE WHEN $2 THEN progress ELSE 0 END,error_code=$3,error_message=$4,internal_error=$5,finished_at=CASE WHEN $2 THEN now() ELSE NULL END,updated_at=now() WHERE id=$1",[id,final,final?'PROCESSING_FAILED':'TRANSIENT_RETRY',safeMessage(error.status),String(error?.stack??error)]);if(final)throw new UnrecoverableError('non-retryable processor failure');throw error;}}
+function reviewRequired(operation: string, result: unknown) {
+  if (!result || typeof result !== 'object') return false;
+  const value = result as Record<string, any>;
+  if (value.review_required === true) return true;
+  if (operation === 'document_validation') return value.ok === false || value.validation?.valid === false;
+  return false;
+}
 
-const worker=new Worker(JOB_QUEUE,job=>run(String(job.data.id),job.attemptsMade+1),{connection:redisConnection(cfg.REDIS_URL),concurrency:cfg.WORKER_CONCURRENCY});
-worker.on('failed',(job,error)=>console.error(JSON.stringify({event:'job_failed',jobId:job?.id,attempt:job?.attemptsMade,error:error.stack})));
-async function cleanup(){await pool.query("UPDATE orchestration_jobs SET state='expired',result=NULL,updated_at=now() WHERE expires_at<now() AND state IN ('completed','failed','review_required')");await pool.query('DELETE FROM orchestration_outputs WHERE expires_at<now()');await pool.query("DELETE FROM sessions WHERE expires_at<now()-interval '24 hours'");await pool.query("DELETE FROM password_resets WHERE expires_at<now()-interval '24 hours'");const root=process.env.TEMP_UPLOAD_ROOT;if(root){const full=resolve(root);if(full.startsWith('/tmp'+sep)){for(const name of await readdir(full).catch(()=>[])){const path=resolve(full,name);if(path.startsWith(full+sep)&&Date.now()-(await stat(path)).mtimeMs>24*60*60*1000)await rm(path,{recursive:true,force:true});}}}}
-const timer=setInterval(()=>void cleanup(),60*60*1000);timer.unref();void cleanup();
-const shutdown=async()=>{clearInterval(timer);await worker.close();await pool.end();};process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
+async function progress(job: Job, value: number) {
+  await Promise.all([
+    job.updateProgress(value),
+    setOrchestrationProgress(pool, String(job.data.id), value),
+  ]);
+}
+
+async function run(bullJob: Job) {
+  const id = String(bullJob.data.id);
+  const attempt = bullJob.attemptsMade + 1;
+  const claimed = await claimOrchestrationJob(pool, id, attempt);
+  if (!claimed) return;
+
+  try {
+    const call = queuedProcessorCall(claimed.operation, claimed.request);
+    await progress(bullJob, 25);
+    const response = await request(new URL(call.path, cfg.FLASK_ORIGIN), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-orchestration-job-id': id,
+        'x-orchestration-attempt': String(attempt),
+      },
+      body: JSON.stringify(call.body),
+      headersTimeout: cfg.UPSTREAM_HEADERS_TIMEOUT_MS,
+      bodyTimeout: cfg.UPSTREAM_BODY_TIMEOUT_MS,
+    });
+    const raw = await response.body.text();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Object.assign(new Error(`processor status ${response.statusCode}`), {
+        transient: transientStatuses.has(response.statusCode),
+        status: response.statusCode,
+      });
+    }
+
+    let result: unknown;
+    try { result = JSON.parse(raw); }
+    catch {
+      throw Object.assign(new Error('processor returned non-JSON metadata'), { transient: false });
+    }
+    await progress(bullJob, 80);
+
+    const words = usageWords(call.usageKind, result);
+    const completion = await completeOrchestrationJob(pool, {
+      id,
+      result,
+      words,
+      reviewRequired: reviewRequired(claimed.operation, result),
+      ttlHours: cfg.JOB_TTL_HOURS,
+    });
+    await bullJob.updateProgress(100);
+
+    // A retry can arrive after the prior attempt committed but before BullMQ
+    // received its acknowledgement. Treat an already-terminal database row as
+    // success: the atomic completion transaction has already published/charged it.
+    if (completion === 'allowance_exceeded') {
+      throw Object.assign(new Error('word allowance exceeded'), { transient: false, terminalAlreadyRecorded: true });
+    }
+  } catch (error: any) {
+    if (error?.terminalAlreadyRecorded) throw new UnrecoverableError('word allowance exceeded');
+    const outcome = await failOrRetryOrchestrationJob(pool, {
+      id,
+      attempt,
+      maxAttempts: Number(claimed.max_attempts ?? 3),
+      transient: Boolean(error?.transient),
+      status: error?.status,
+      internalError: String(error?.stack ?? error),
+    });
+    if (outcome.final) throw new UnrecoverableError(outcome.code === 'CANCELLED' ? 'cancelled' : 'non-retryable processor failure');
+    throw error;
+  }
+}
+
+const worker = new Worker(JOB_QUEUE, run, {
+  connection: redisConnection(cfg.REDIS_URL),
+  concurrency: cfg.WORKER_CONCURRENCY,
+});
+worker.on('failed', (job, error) => console.error(JSON.stringify({
+  event: 'job_failed', jobId: job?.id, attempt: job?.attemptsMade, error: error.stack,
+})));
+
+async function cleanup() {
+  await pool.query("UPDATE orchestration_jobs SET state='expired',result=NULL,updated_at=now() WHERE expires_at<now() AND state IN ('completed','failed','review_required')");
+  await pool.query('DELETE FROM orchestration_outputs WHERE expires_at<now()');
+  await pool.query("DELETE FROM sessions WHERE expires_at<now()-interval '24 hours'");
+  await pool.query("DELETE FROM password_resets WHERE expires_at<now()-interval '24 hours'");
+  const root = process.env.TEMP_UPLOAD_ROOT;
+  if (root) {
+    const full = resolve(root);
+    if (full.startsWith('/tmp' + sep)) {
+      for (const name of await readdir(full).catch(() => [])) {
+        const path = resolve(full, name);
+        if (path.startsWith(full + sep) && Date.now() - (await stat(path)).mtimeMs > 24 * 60 * 60 * 1000) {
+          await rm(path, { recursive: true, force: true });
+        }
+      }
+    }
+  }
+}
+const timer = setInterval(() => void cleanup(), 60 * 60 * 1000);
+timer.unref();
+void cleanup();
+
+const shutdown = async () => { clearInterval(timer); await worker.close(); await pool.end(); };
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
