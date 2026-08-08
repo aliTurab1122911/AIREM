@@ -1,0 +1,83 @@
+name: Secondary V21 Studios Parity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secondary-contracts:
+    name: Secondary studio types and contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Protect the known-good Python processing core
+        run: python ci/verify_protected_processing.py
+      - name: Install JavaScript workspaces
+        run: npm ci
+      - name: Build shared v21 contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck React studio
+        run: npm run typecheck --workspace airem-frontend
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+      - name: Run secondary contract regressions
+        run: npm test --workspace @airem/gateway -- --run tests/secondary-studios-contracts.test.ts tests/v21-contracts.test.ts
+      - name: Run frontend unit tests
+        run: npm test --workspace airem-frontend -- --run
+
+  real-secondary-browser-e2e:
+    name: Real secondary studios browser E2E
+    needs: secondary-contracts
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: airem-secondary-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_secondary_e2e
+      POSTGRES_PASSWORD: e2e-postgres-password
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: e2e@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: mkdir -p deploy/tls && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build the isolated application stack
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Apply service migrations
+        run: |
+          docker compose exec -T accounts node services/accounts/dist/migrate.js
+          docker compose exec -T gateway node services/gateway/dist/migrate.js
+      - name: Require the application to be healthy
+        run: curl --fail --silent --show-error --insecure --retry 10 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz >/dev/null
+      - name: Run no-mock secondary studio browser workflow
+        run: npx playwright test --config playwright.full.config.ts tests/full/secondary-studios.spec.ts
+        working-directory: e2e
+      - name: Collect logs and remove isolated data
+        if: always()
+        run: |
+          docker compose ps --all > secondary-compose-status.log
+          docker compose logs --no-color > secondary-compose.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: secondary-studios-e2e-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            secondary-compose.log
+            secondary-compose-status.log
