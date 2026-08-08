@@ -19,10 +19,15 @@ def run_entrypoint(tmp_path: Path, workers: str | None):
 
 
 def test_processor_workers_default_and_override(tmp_path):
-    assert "--workers=2" in run_entrypoint(tmp_path, None).stdout
+    default = run_entrypoint(tmp_path, None)
+    assert default.returncode == 0
+    assert "--workers=2" in default.stdout
+    assert "processor_app:app" in default.stdout
+
     overridden = run_entrypoint(tmp_path, "5")
     assert overridden.returncode == 0
     assert "--workers=5" in overridden.stdout
+    assert "processor_app:app" in overridden.stdout
 
 
 def test_invalid_processor_workers_prevents_startup(tmp_path):
