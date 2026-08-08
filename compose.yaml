@@ -99,7 +99,7 @@ services:
     tmpfs:
       - "/tmp:uid=999,gid=999,mode=0700"
     networks: [backend]
-    healthcheck: {test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"], interval: 20s, timeout: 5s, retries: 5, start_period: 30s}
+    healthcheck: {test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"], interval: 20s, timeout: 5s, retries: 5, start_period: 30s}
     deploy: {resources: {limits: {cpus: "2.0", memory: 2G}}}
 
   worker:
