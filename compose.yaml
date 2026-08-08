@@ -14,7 +14,7 @@ x-service-defaults: &service-defaults
 services:
   frontend:
     <<: *service-defaults
-    build: {context: ./frontend, target: production}
+    build: {context: ., dockerfile: frontend/Dockerfile, target: production}
     ports: ["${PUBLIC_HTTPS_PORT:-8443}:8443"]
     volumes:
       - ${TLS_CERT_PATH:-./deploy/tls/tls.crt}:/run/tls/tls.crt:ro
@@ -29,7 +29,7 @@ services:
 
   accounts:
     <<: *service-defaults
-    build: ./services/accounts
+    build: {context: ., dockerfile: services/accounts/Dockerfile}
     environment:
       <<: *node-environment
       APP_ORIGIN: ${APP_ORIGIN:-https://localhost:8443}
@@ -94,7 +94,6 @@ services:
 
   worker:
     <<: *service-defaults
-    profiles: [workers]
     build: {context: ., dockerfile: services/gateway/Dockerfile}
     command: [node, dist/worker.js]
     environment:

@@ -4,6 +4,15 @@ AIREM v21 is a Flask/Python DOCX rewriting and formatting application. Its norma
 
 The optional OpenAI range editor is retained as a separate user-invoked editing tool. It is not part of the Linguistic V1 rewrite algorithm.
 
+## JavaScript dependency toolchain
+
+The repository-level npm workspace covers the frontend, both Node services, the
+shared contracts package, and the Playwright end-to-end tests. The dependency
+lockfile was generated and validated with **Node.js 24.15.0** and **npm 11.4.2**;
+application containers and CI run on Node.js 22, which is also supported by the
+workspace engine range. Run `npm ci` from the repository root for a reproducible
+installation of every workspace.
+
 ## Main workflows
 
 1. **Word Document Rewriter** — extract selected DOCX content, rewrite it and reinsert it into the source document.
@@ -167,11 +176,15 @@ host; production certificates should come from your ingress or ACME provider.
    default password or account baked into an image. It may also be submitted to
    `POST /api/auth/register` through the TLS proxy.
 
-Workers are optional. Enable and scale them according to available CPU and RAM;
-each worker defaults to two concurrent document jobs and is capped separately:
+The standard local stack includes one worker because the React workspace reads
+and submits queue-backed `/api/jobs` workflows. The gateway readiness check is
+unhealthy, and new queued submissions receive `503 QUEUE_UNAVAILABLE`, until a
+worker has registered with Redis. Scale workers according to available CPU and
+RAM; each worker defaults to two concurrent document jobs and is capped
+separately:
 
 ```bash
-docker compose --profile workers up -d --scale worker=2
+docker compose up -d --scale worker=2
 ```
 
 Do not increase `WORKER_CONCURRENCY` without load testing. DOCX/PDF operations

@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { buildApp, type Upstream } from '../src/app.js';
 import type { GatewayStore } from '../src/store.js';
+import type { JobQueue } from '../src/jobs.js';
 
 const aliceJob = '11111111-1111-4111-8111-111111111111';
 const cfg: any = { COOKIE_SECRET: 'test-cookie-secret-that-is-long-enough', FLASK_ORIGIN: 'http://processor:5000', PORT: 4000, NODE_ENV: 'test', UPLOAD_MAX_BYTES: 1024 * 1024, UPSTREAM_HEADERS_TIMEOUT_MS: 1000, UPSTREAM_BODY_TIMEOUT_MS: 1000, RATE_LIMIT_MAX: 100 };
@@ -17,6 +18,12 @@ class MemoryStore implements GatewayStore {
 }
 
 const response = (body = '{}', headers: Record<string, string> = {}) => ({ statusCode: 200, headers: { 'content-type': 'application/json', ...headers }, body: Readable.from(body) });
+const queue = (ready: boolean): JobQueue => ({
+  add: async () => undefined,
+  cancel: async () => false,
+  isReady: async () => ready,
+  close: async () => undefined,
+});
 
 describe('gateway account isolation', () => {
   it('applies RATE_LIMIT_MAX and a stricter processing limit at runtime', async () => {
