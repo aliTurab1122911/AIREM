@@ -13,8 +13,8 @@ COPY packages/contracts packages/contracts
 RUN npm run build --workspace @airem/contracts && npm run build --workspace airem-frontend
 
 FROM nginx:1.27-alpine AS production
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY proxy_params /etc/nginx/proxy_params
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/proxy_params /etc/nginx/proxy_params
 COPY --from=build --chown=nginx:nginx /app/frontend/dist /usr/share/nginx/html
 USER nginx
 EXPOSE 8080 8443
