@@ -7,4 +7,4 @@ case "$workers" in
 esac
 
 exec gunicorn --bind=0.0.0.0:5000 --workers="$workers" --threads=1 --timeout=120 \
-  --graceful-timeout=30 --keep-alive=5 app:app
+  --graceful-timeout=30 --keep-alive=5 processor_app:app
