@@ -1,14 +1,18 @@
-"""Production composition wrapper for the unchanged AIREM v21 Flask processor.
+"""Production composition wrapper for the AIREM v21 Flask processor.
 
-PR 1 deliberately keeps app.py and the Python domain modules unchanged.  Gunicorn
-imports this module so production health/readiness can be checked without using a
-Jinja page as a health endpoint.
+The legacy Jinja application remains intact. Production additionally registers a
+resource-oriented JSON compatibility API so React/gateway callers do not need to
+interpret rendered HTML responses.
 """
 
 from app import app
+from processor_api import api_bp
+
+
+app.register_blueprint(api_bp)
 
 
 @app.get("/healthz")
 def healthz():
     """Report that the Python processor imported and is serving requests."""
-    return {"ok": True, "service": "airem-processor", "engine": "v21"}
+    return {"ok": True, "service": "airem-processor", "engine": "v21", "json_api": "internal/v1"}
