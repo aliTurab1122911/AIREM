@@ -1,6 +1,13 @@
 import { useState, type ReactNode } from "react";
-import type { RewriteProfile, SelectionMode, WritingStyle } from "@airem/contracts";
+import type {
+  DocumentInventory,
+  RewriteProfile,
+  SelectionMode,
+  VisualRange,
+  WritingStyle,
+} from "@airem/contracts";
 import { api } from "../lib/api";
+import { DocumentSelection } from "../features/rewrite/DocumentSelection";
 import { AlertCircle, Check, ChevronRight, Download, LoaderCircle, RefreshCw, UploadCloud } from "lucide-react";
 
 type Phase = "idle" | "loading" | "success" | "error";
@@ -24,9 +31,16 @@ export function RewriteStudio() {
   const [error,setError]=useState(""); const [result,setResult]=useState<Result>({}); const [file,setFile]=useState<File>();
   const [jobId,setJobId]=useState(""); const [text,setText]=useState(""); const [profile,setProfile]=useState<RewriteProfile>("natural");
   const [styleProfile,setStyleProfile]=useState<WritingStyle>("natural_student");
-  const [rangeMode,setRangeMode]=useState<SelectionMode>("automatic"); const [start,setStart]=useState(0); const [end,setEnd]=useState(10); const [terms,setTerms]=useState("");
+  const [rangeMode,setRangeMode]=useState<SelectionMode>("automatic"); const [start,setStart]=useState(0); const [end,setEnd]=useState(0); const [terms,setTerms]=useState("");
   const [cycles,setCycles]=useState(1); const [editedTexts,setEditedTexts]=useState<Record<string,string>>({}); const [formatJob,setFormatJob]=useState("");
   const [downloadUrl,setDownloadUrl]=useState("");
+  const [inventory,setInventory]=useState<DocumentInventory>();
+  const [selectedBlocks,setSelectedBlocks]=useState<Set<string>>(new Set());
+  const [visualRanges,setVisualRanges]=useState<VisualRange[]>([]);
+  const [includeHeadings,setIncludeHeadings]=useState(false);
+  const [includeCaptions,setIncludeCaptions]=useState(false);
+  const [includeTableHeaders,setIncludeTableHeaders]=useState(false);
+  const [extractionLocked,setExtractionLocked]=useState(false);
 
   const acceptResult = <T extends object>(data: T, next?: number) => {
     const record = data as Record<string, unknown>;
@@ -41,15 +55,34 @@ export function RewriteStudio() {
     catch(e){setError(e instanceof Error?e.message:"Unexpected error");setPhase("error"); return undefined;}
   };
   const requireFile = () => { if(!file){setError("Choose a supported file first.");setPhase("error");return false} return true };
-  const upload=()=>requireFile()&&run(()=>api.uploadDocument(file!),1);
-  const select=()=>run(()=>api.extractRanges(jobId,{
-    selection_mode: rangeMode,
-    selected_blocks: rangeMode==="manual" ? text.split(",").map(value=>value.trim()).filter(Boolean) : undefined,
-    start_order: rangeMode==="range" ? start : undefined,
-    end_order: rangeMode==="range" ? end : undefined,
-    include_headings: true,
-    include_captions: true,
-  }),2);
+  const upload=async()=>{
+    if(!requireFile())return;
+    const uploaded=await run(()=>api.uploadDocument(file!),1);
+    if(!uploaded)return;
+    setInventory(uploaded.inventory);
+    setStart(0);
+    setEnd(Math.max(0, uploaded.inventory.block_count - 1));
+    setSelectedBlocks(new Set(uploaded.inventory.blocks.filter(block=>block.default_selected).map(block=>block.block_id)));
+    setVisualRanges([]);
+    setRangeMode("automatic");
+    setIncludeHeadings(false); setIncludeCaptions(false); setIncludeTableHeaders(false);
+    setExtractionLocked(false); setEditedTexts({}); setDownloadUrl("");
+  };
+  const select=async()=>{
+    if(!inventory || extractionLocked)return;
+    const payload = {
+      selection_mode: rangeMode,
+      selected_blocks: rangeMode === "manual" ? [...selectedBlocks] : undefined,
+      start_order: rangeMode === "range" ? start : undefined,
+      end_order: rangeMode === "range" ? end : undefined,
+      visual_ranges: rangeMode === "visual" ? visualRanges : undefined,
+      include_headings: includeHeadings,
+      include_captions: includeCaptions,
+      include_table_headers: includeTableHeaders,
+    } as const;
+    const extracted=await run(()=>api.extractRanges(jobId,payload),2);
+    if(extracted)setExtractionLocked(true);
+  };
   const rewrite=async()=>{
     const protectedTerms=terms.split("\n").map(value=>value.trim()).filter(Boolean);
     const manualSettings = profile === "manual" ? { target_change_percent: -2, length_tolerance: 7, lexical_intensity: 70, connector_intensity: 70, compression_intensity: 70 } : undefined;
@@ -77,9 +110,18 @@ export function RewriteStudio() {
     <header className="studio-head"><div><p className="eyebrow">Writing workspace</p><h2>Document studio</h2><p>Rewrite, inspect, validate and export without losing your formatting.</p></div></header>
     <div className="studio-tabs" role="tablist">{tabs.map(t=><button role="tab" aria-selected={tab===t.id} onClick={()=>{setTab(t.id);setPhase("idle")}} key={t.id}>{t.label}</button>)}</div>
     {tab==="document" && <div className="studio-layout"><nav className="stepper" aria-label="Rewrite progress">{steps.map((s,i)=><button key={s} className={i===step?"active":i<step?"done":""} onClick={()=>jobId||i===0?setStep(i):undefined}><span>{i<step?<Check size={13}/>:i+1}</span>{s}</button>)}</nav><div className="workspace-card card">
-      {step===0&&<><Heading n="01" title="Upload a DOCX" copy="Your original remains untouched. Files are processed through the secure document gateway."/><FilePicker accept=".docx" file={file} onChange={setFile}/><button className="button primary" disabled={!file||phase==="loading"} onClick={upload}><UploadCloud size={16}/>Upload and inspect</button></>}
-      {step===1&&<><Heading n="02" title="Choose what to rewrite" copy="Use the v21 automatic, block, or ordered-range extraction modes. Turnitin highlights become saved visual ranges after report mapping."/><div className="choice-grid">{(["automatic","manual","range"] as SelectionMode[]).map(x=><button className={rangeMode===x?"selected":""} onClick={()=>setRangeMode(x)} key={x}><strong>{x}</strong><span>{x==="automatic"?"Detect body content":x==="manual"?"Enter block IDs":"Use block order boundaries"}</span></button>)}</div>{rangeMode==="manual"&&<label className="field"><span>Block IDs</span><textarea value={text} onChange={e=>setText(e.target.value)} placeholder="p_12,p_13"/></label>}{rangeMode==="range"&&<div className="field-row"><label className="field"><span>Start order</span><input type="number" value={start} min={0} onChange={e=>setStart(+e.target.value)}/></label><label className="field"><span>End order</span><input type="number" value={end} min={start} onChange={e=>setEnd(+e.target.value)}/></label></div>}<button className="button primary" onClick={select}>Extract selection<ChevronRight size={16}/></button></>}
-      {step===2&&<><Heading n="03" title="Configure extraction" copy="Protect names, citations, terminology and phrases from modification."/><label className="field"><span>Protected terms · one per line</span><textarea value={terms} onChange={e=>setTerms(e.target.value)} placeholder="AIREM\nSmith et al. (2024)"/></label><button className="button primary" onClick={()=>setStep(3)}>Continue<ChevronRight size={16}/></button></>}
+      {step===0&&<><Heading n="01" title="Upload a DOCX" copy="The processor inventories the immutable source document before any extraction is created."/><FilePicker accept=".docx" file={file} onChange={setFile}/><button className="button primary" disabled={!file||phase==="loading"} onClick={upload}><UploadCloud size={16}/>Upload and inspect</button></>}
+      {step===1&&<><Heading n="02" title="Choose exactly what to rewrite" copy="Preview the uploaded DOCX with its Word structure, then select the automatic body, a start/end range, whole blocks, or exact character ranges."/>{inventory ? <><DocumentSelection
+        inventory={inventory}
+        mode={rangeMode} onModeChange={setRangeMode}
+        selectedBlocks={selectedBlocks} onSelectedBlocksChange={setSelectedBlocks}
+        startOrder={start} endOrder={end} onStartOrderChange={setStart} onEndOrderChange={setEnd}
+        visualRanges={visualRanges} onVisualRangesChange={setVisualRanges}
+        includeHeadings={includeHeadings} includeCaptions={includeCaptions} includeTableHeaders={includeTableHeaders}
+        onIncludeHeadingsChange={setIncludeHeadings} onIncludeCaptionsChange={setIncludeCaptions} onIncludeTableHeadersChange={setIncludeTableHeaders}
+        locked={extractionLocked}
+      />{extractionLocked?<div className="extraction-locked"><Check size={16}/><div><strong>Extraction locked</strong><span>The v21 extraction map has been created from this immutable upload inventory. Upload a new DOCX to create a different extraction.</span></div></div>:<button className="button primary selection-submit" disabled={rangeMode==="manual"&&!selectedBlocks.size||rangeMode==="visual"&&!visualRanges.length} onClick={select}>Create immutable extraction<ChevronRight size={16}/></button>}</> : <p className="empty-inline">Upload a DOCX first to load its structural inventory.</p>}</>}
+      {step===2&&<><Heading n="03" title="Configure rewrite" copy="Extraction is fixed. Protect additional terminology before running the linguistic rewrite."/><div className="extraction-locked"><Check size={16}/><div><strong>Source mapping fixed</strong><span>All later rewrite cycles operate on this extraction without changing its paragraph, table, or character-span targets.</span></div></div><label className="field"><span>Protected terms · one per line</span><textarea value={terms} onChange={e=>setTerms(e.target.value)} placeholder="AIREM\nSmith et al. (2024)"/></label><button className="button primary" onClick={()=>setStep(3)}>Continue<ChevronRight size={16}/></button></>}
       {step===3&&<><Heading n="04" title="Rewrite controls" copy="These controls map directly to v21 rewrite profiles and writing styles."/><div className="field-row"><label className="field"><span>Rewrite profile</span><select value={profile} onChange={e=>setProfile(e.target.value as RewriteProfile)}>{profileOptions.map(value=><option value={value} key={value}>{value}</option>)}</select></label><label className="field"><span>Writing style</span><select value={styleProfile} onChange={e=>setStyleProfile(e.target.value as WritingStyle)}>{styleOptions.map(value=><option value={value} key={value}>{value}</option>)}</select></label></div><label className="field"><span>Total rewrite passes</span><input type="number" min="1" value={cycles} onChange={e=>setCycles(Math.max(1,+e.target.value||1))}/></label>{profile==="manual"&&<p className="small">Manual mode currently submits the documented v21 constrained defaults; full manual controls are restored in the dedicated workspace parity PR.</p>}<button className="button primary" onClick={rewrite}>Start rewrite<ChevronRight size={16}/></button></>}
       {step===4&&<><Heading n="05" title="Review & diagnostics" copy="Mapped v21 output is stored per extraction chunk. Edit the current chunk without losing the other chunk mappings."/><div className="comparison"><label className="field"><span>Current chunk</span><textarea value={firstChunk} onChange={e=>firstChunkKey&&setEditedTexts(current=>({...current,[firstChunkKey]:e.target.value}))} placeholder="Run a rewrite to populate mapped text"/></label><div className="field"><span>Mapped chunks</span><pre>{JSON.stringify(editedTexts,null,2)}</pre></div></div><div className="diagnostics"><span><Check size={14}/> Paragraph mapping</span><span><Check size={14}/> Protected terms</span><span><Check size={14}/> Formatting structure</span></div><button className="button primary" disabled={!Object.keys(editedTexts).length} onClick={validate}>Validate and continue</button></>}
       {step===5&&<><Heading n="06" title="Reinsert & download" copy="Merge validated mapped chunks into a copy of your original DOCX."/><button className="button secondary" disabled={!Object.keys(editedTexts).length} onClick={reinsert}>Reinsert into DOCX</button>{downloadUrl?<a className="button primary" href={downloadUrl}><Download size={16}/>Download final DOCX</a>:<p className="empty-inline">Reinsert the validated content to receive the canonical output URL.</p>}</>}

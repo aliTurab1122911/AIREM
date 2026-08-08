@@ -1,0 +1,73 @@
+name: React Upload Selection Parity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selection-contract:
+    name: Word preview and exact-selection tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Build canonical contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck React
+        run: npm run typecheck --workspace airem-frontend
+      - name: Test exact browser visual offsets
+        run: npm run test --workspace airem-frontend -- --run src/features/rewrite/selection.test.ts
+      - name: Install processor dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Verify protected v21 processing sources
+        run: python ci/verify_protected_processing.py
+      - name: Test selection API and immutable extraction
+        run: python -m pytest -q tests/test_v21_selection_api.py
+
+  real-docx-selection:
+    name: Real DOCX upload preview selection extract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Build canonical contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+      - name: Build production processor
+        run: docker build -t airem-processor:selection -f Dockerfile.python .
+      - name: Start production processor
+        run: docker run -d --name airem-processor-selection -p 5000:5000 airem-processor:selection
+      - name: Wait for processor
+        run: |
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:5000/healthz >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs airem-processor-selection
+          exit 1
+      - name: Exercise every selection mode through real gateway and Flask
+        env:
+          FLASK_ORIGIN: http://127.0.0.1:5000
+          SELECTION_DOCX: docs/sample_1_org.docx
+        run: npx tsx services/gateway/tests/real-selection-roundtrip.ts
+      - name: Processor logs
+        if: always()
+        run: docker logs airem-processor-selection || true
+      - name: Stop processor
+        if: always()
+        run: docker rm -f airem-processor-selection || true
