@@ -3,6 +3,10 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Auth } from "./Auth";
 
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({ refreshSession: vi.fn() }),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("authentication forms", () => {

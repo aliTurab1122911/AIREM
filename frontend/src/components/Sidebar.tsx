@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Logo } from "./brand/Logo";
+import { useAuth } from "../auth/AuthContext";
 
 const links = [
   { to: "/app", label: "Home", icon: Home, end: true },
@@ -34,6 +35,14 @@ export function Sidebar({
   onClose,
   onLogout,
 }: Props) {
+  const { user } = useAuth();
+  const name = user?.displayName || user?.email || "Account";
+  const initials = name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
   return (
     <>
       {open && (
@@ -74,11 +83,11 @@ export function Sidebar({
           ))}
         </nav>
         <div className="sidebar-account">
-          <div className="avatar">AM</div>
+          <div className="avatar">{initials}</div>
           {!collapsed && (
             <div>
-              <strong>Alex Morgan</strong>
-              <span>alex@example.com</span>
+              <strong>{name}</strong>
+              <span>{user?.email}</span>
             </div>
           )}
           <button aria-label="Log out" onClick={onLogout}>

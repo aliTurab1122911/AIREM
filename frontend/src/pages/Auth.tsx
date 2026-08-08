@@ -3,12 +3,15 @@ import { ArrowLeft, LoaderCircle, LockKeyhole, Mail, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "../components/brand/Logo";
 import { api } from "../lib/api";
+import { useAuth } from "../auth/AuthContext";
 
 export function Auth() {
-  const path = useLocation().pathname,
+  const location = useLocation(),
+    path = location.pathname,
     navigate = useNavigate(),
     isLogin = path === "/login",
-    isRegister = path === "/register";
+    isRegister = path === "/register",
+    { refreshSession } = useAuth();
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [sent, setSent] = useState(false);
@@ -34,7 +37,19 @@ export function Auth() {
         setSent(true);
         return;
       }
-      navigate("/app");
+      const user = await refreshSession();
+      if (!user) throw new Error("Session was not established");
+      const requested = (
+        location.state as {
+          from?: { pathname?: string; search?: string; hash?: string };
+        } | null
+      )?.from;
+      navigate(
+        requested?.pathname?.startsWith("/app")
+          ? `${requested.pathname}${requested.search ?? ""}${requested.hash ?? ""}`
+          : "/app",
+        { replace: true },
+      );
     } catch {
       setError(
         "We couldn’t complete that request. Please check your details and try again.",

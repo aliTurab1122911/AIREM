@@ -3,16 +3,19 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { useAuth } from "../auth/AuthContext";
 
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const navigate = useNavigate();
+  const { clearSession } = useAuth();
   const logout = async () => {
     setLogoutError("");
     try {
       await api.logout();
+      clearSession();
       navigate("/login", { replace: true });
     } catch {
       setLogoutError("Log out failed. Please try again.");

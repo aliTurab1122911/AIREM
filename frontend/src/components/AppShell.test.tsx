@@ -5,6 +5,12 @@ import { api } from "../lib/api";
 import { AppShell } from "./AppShell";
 
 vi.mock("../lib/api", () => ({ api: { logout: vi.fn() } }));
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({
+    user: { email: "alex@example.test", displayName: "Alex Morgan" },
+    clearSession: vi.fn(),
+  }),
+}));
 
 function renderShell() {
   render(
