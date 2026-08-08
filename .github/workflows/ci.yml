@@ -159,7 +159,7 @@ jobs:
           docker build -t airem-processor:ci -f Dockerfile.python .
           docker build -t airem-frontend:ci frontend
           docker build -t airem-accounts:ci services/accounts
-          docker build -t airem-gateway:ci -f services/gateway/Dockerfile .
+          ci/build_gateway_clean.sh -t airem-gateway:ci
       - uses: aquasecurity/trivy-action@master
         with:
           image-ref: airem-processor:ci
