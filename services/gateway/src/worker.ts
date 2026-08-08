@@ -17,6 +17,7 @@ import { usageWords } from './usage.js';
 const cfg = loadConfig();
 const pool = new pg.Pool({ connectionString: cfg.DATABASE_URL });
 const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+const transientCodes = new Set(['ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENOTFOUND','EHOSTUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 
 function reviewRequired(operation: string, result: unknown) {
   if (!result || typeof result !== 'object') return false;
@@ -24,6 +25,11 @@ function reviewRequired(operation: string, result: unknown) {
   if (value.review_required === true) return true;
   if (operation === 'document_validation') return value.ok === false || value.validation?.valid === false;
   return false;
+}
+
+function isTransient(error: any) {
+  if (typeof error?.transient === 'boolean') return error.transient;
+  return transientCodes.has(String(error?.code ?? '').toUpperCase());
 }
 
 async function progress(job: Job, value: number) {
@@ -78,9 +84,6 @@ async function run(bullJob: Job) {
     });
     await bullJob.updateProgress(100);
 
-    // A retry can arrive after the prior attempt committed but before BullMQ
-    // received its acknowledgement. Treat an already-terminal database row as
-    // success: the atomic completion transaction has already published/charged it.
     if (completion === 'allowance_exceeded') {
       throw Object.assign(new Error('word allowance exceeded'), { transient: false, terminalAlreadyRecorded: true });
     }
@@ -90,7 +93,7 @@ async function run(bullJob: Job) {
       id,
       attempt,
       maxAttempts: Number(claimed.max_attempts ?? 3),
-      transient: Boolean(error?.transient),
+      transient: isTransient(error),
       status: error?.status,
       internalError: String(error?.stack ?? error),
     });
