@@ -75,7 +75,8 @@ services:
   documents-init:
     build: {context: ., dockerfile: Dockerfile.python}
     user: "0:0"
-    command: [chown, -R, "999:999", /app/workspace]
+    entrypoint: [chown]
+    command: [-R, "999:999", /app/workspace]
     restart: "no"
     network_mode: none
     read_only: true
