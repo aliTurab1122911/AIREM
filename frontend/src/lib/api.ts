@@ -10,6 +10,11 @@ import {
   detectionFileResponseSchema,
   formattingAnalysisResponseSchema,
   formattingApplyResponseSchema,
+  turnitinUploadResponseSchema,
+  rangeEditConfigurationResponseSchema,
+  rangeEditDraftResponseSchema,
+  rangeEditExportResponseSchema,
+  rangeEditContinueResponseSchema,
   type RangeSelectionRequest,
   type RewriteRequest,
   type RewriteCycleRequest,
@@ -17,6 +22,8 @@ import {
   type ReinsertionRequest,
   type TextRewriteRequest,
   type FormattingApplyRequest,
+  type RangeEditDraftRequest,
+  type RangeEditActionRequest,
   type DocumentUploadResponse,
   type DocumentJobResponse,
   type ExtractionResponse,
@@ -28,6 +35,11 @@ import {
   type DetectionFileResponse,
   type FormattingAnalysisResponse,
   type FormattingApplyResponse,
+  type TurnitinUploadResponse,
+  type RangeEditConfigurationResponse,
+  type RangeEditDraftResponse,
+  type RangeEditExportResponse,
+  type RangeEditContinueResponse,
 } from "@airem/contracts";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -100,7 +112,9 @@ export async function request<T>(
       (details as { error?: { code?: string } } | undefined)?.error?.code === "AUTH_REQUIRED" &&
       typeof window !== "undefined"
     ) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
-    throw new ApiError(`Request failed (${response.status})`, response.status, details);
+    const processorMessage = (details as { error?: { message?: string }; message?: string } | undefined)?.error?.message
+      ?? (details as { message?: string } | undefined)?.message;
+    throw new ApiError(processorMessage || `Request failed (${response.status})`, response.status, details);
   }
   if (response.status === 204) return undefined as T;
   const value: unknown = await response.json();
@@ -138,6 +152,19 @@ export const api = {
     request(`/api/documents/jobs/${id}`, {}, documentJobResponseSchema),
   extractRanges: (id: string, payload: RangeSelectionRequest): Promise<ExtractionResponse> =>
     request(`/api/ranges/${id}/extract`, { method: "POST", body: JSON.stringify(payload) }, extractionResponseSchema),
+  uploadTurnitin: (id: string, file: File): Promise<TurnitinUploadResponse> => {
+    const body = new FormData();
+    body.append("turnitin_pdf", file);
+    return request(`/api/turnitin/${id}`, { method: "POST", body }, turnitinUploadResponseSchema);
+  },
+  rangeEditConfiguration: (): Promise<RangeEditConfigurationResponse> =>
+    request("/api/ranges/configuration", {}, rangeEditConfigurationResponseSchema),
+  draftRangeEdits: (id: string, payload: RangeEditDraftRequest): Promise<RangeEditDraftResponse> =>
+    request(`/api/ranges/${id}/draft`, { method: "POST", body: JSON.stringify(payload) }, rangeEditDraftResponseSchema),
+  exportRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditExportResponse> =>
+    request(`/api/ranges/${id}/export`, { method: "POST", body: JSON.stringify(payload) }, rangeEditExportResponseSchema),
+  continueRangeEdits: (id: string, payload: RangeEditActionRequest): Promise<RangeEditContinueResponse> =>
+    request(`/api/ranges/${id}/continue`, { method: "POST", body: JSON.stringify(payload) }, rangeEditContinueResponseSchema),
   rewriteProfiles: () => request<Record<string, unknown>>("/api/rewrite/profiles"),
   rewriteDocument: (id: string, payload: RewriteRequest): Promise<RewriteResponse> =>
     request(`/api/rewrite/${id}`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
