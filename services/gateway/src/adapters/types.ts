@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodType } from 'zod';
+import type { UsageKind } from '../usage.js';
 
 export type AdapterRoute = {
   method: 'GET' | 'HEAD' | 'POST';
@@ -9,6 +10,7 @@ export type AdapterRoute = {
   multipart?: { field: string; extensions: readonly string[] };
   html?: 'json' | 'passthrough';
   encode?: (value: any) => string;
+  usageKind?: UsageKind;
 };
 
 export type AdapterHandler = (route: AdapterRoute) => (request: FastifyRequest, reply: unknown) => Promise<unknown>;
