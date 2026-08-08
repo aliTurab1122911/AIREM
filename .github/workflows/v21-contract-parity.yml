@@ -1,0 +1,62 @@
+name: V21 Contract Parity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Canonical TypeScript contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Build shared contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+      - name: Run gateway and contract regression tests
+        run: npm test --workspace @airem/gateway
+      - name: Typecheck React against canonical contracts
+        run: npm run typecheck --workspace airem-frontend
+
+  real-roundtrip:
+    name: React contract to gateway to real Flask
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build --workspace @airem/contracts
+      - run: npm run typecheck --workspace @airem/gateway
+      - name: Build production processor
+        run: docker build -t airem-processor:contracts -f Dockerfile.python .
+      - name: Start real v21 processor
+        run: docker run -d --name airem-processor-contracts -p 5000:5000 airem-processor:contracts
+      - name: Wait for processor readiness
+        run: |
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:5000/healthz >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs airem-processor-contracts
+          exit 1
+      - name: Run canonical request and response roundtrip
+        env:
+          FLASK_ORIGIN: http://127.0.0.1:5000
+          CONTRACT_DOCX: docs/sample_1_org.docx
+        run: npx tsx services/gateway/tests/real-contract-roundtrip.ts
+      - name: Processor logs
+        if: always()
+        run: docker logs airem-processor-contracts || true
+      - name: Stop processor
+        if: always()
+        run: docker rm -f airem-processor-contracts || true
