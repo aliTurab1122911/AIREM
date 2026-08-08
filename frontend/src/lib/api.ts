@@ -100,29 +100,66 @@ export const api = {
     }),
   rewriteProfiles: () =>
     request<Record<string, unknown>>("/api/rewrite/profiles"),
-  rewriteDocument: (id: string, payload: Record<string, unknown>, cycle = false) =>
-    request<Record<string, unknown>>(`/api/rewrite/${id}${cycle ? "/cycles" : ""}`, {
+  rewriteDocument: (
+    id: string,
+    payload: Record<string, unknown>,
+    cycle = false,
+  ) =>
+    request<Record<string, unknown>>(
+      `/api/rewrite/${id}${cycle ? "/cycles" : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
+  validateDocument: (id: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/validation/${id}`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  validateDocument: (id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/validation/${id}`, { method: "POST", body: JSON.stringify(payload) }),
   reinsertDocument: (id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/reinsertion/${id}`, { method: "POST", body: JSON.stringify(payload) }),
-  rewriteText: (payload: { text: string; profile?: string; intensity?: number }) =>
-    request<Record<string, unknown>>("/api/text/rewrite", { method: "POST", body: JSON.stringify(payload) }),
+    request<Record<string, unknown>>(`/api/reinsertion/${id}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  rewriteText: (payload: {
+    text: string;
+    profile?: string;
+    intensity?: number;
+  }) =>
+    request<Record<string, unknown>>("/api/text/rewrite", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   detectText: (text: string) =>
-    request<Record<string, unknown>>("/api/detection/text", { method: "POST", body: JSON.stringify({ text }) }),
+    request<Record<string, unknown>>("/api/detection/text", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
   detectFile: (file: File) => {
-    const body = new FormData(); body.append("file", file);
-    return request<Record<string, unknown>>("/api/detection/file", { method: "POST", body });
+    const body = new FormData();
+    body.append("file", file);
+    return request<Record<string, unknown>>("/api/detection/file", {
+      method: "POST",
+      body,
+    });
   },
   analyseFormatting: (file: File) => {
-    const body = new FormData(); body.append("docx_file", file);
-    return request<Record<string, unknown>>("/api/formatting/analyse", { method: "POST", body });
+    const body = new FormData();
+    body.append("docx_file", file);
+    return request<Record<string, unknown>>("/api/formatting/analyse", {
+      method: "POST",
+      body,
+    });
   },
-  applyFormatting: (id: string, settings: Record<string, string | number | boolean>) =>
-    request<Record<string, unknown>>(`/api/formatting/apply/${id}`, { method: "POST", body: JSON.stringify({ settings }) }),
+  applyFormatting: (
+    id: string,
+    settings: Record<string, string | number | boolean>,
+  ) =>
+    request<Record<string, unknown>>(`/api/formatting/apply/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ settings }),
+    }),
   downloadUrl: (id: string, filename: string) =>
     `${API_BASE_URL}/api/documents/download/${id}/${encodeURIComponent(filename)}`,
   accountDashboard: () =>
@@ -154,6 +191,16 @@ export const api = {
     request("/api/auth/password-reset/request", {
       method: "POST",
       body: JSON.stringify({ email }),
+    }),
+  verifyEmail: (token: string) =>
+    request("/api/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  completePasswordReset: (token: string, password: string) =>
+    request("/api/auth/password-reset/complete", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
     }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
 };

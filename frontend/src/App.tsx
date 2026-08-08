@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Landing } from "./pages/Landing";
+import { ResetPassword, VerifyEmail } from "./pages/TokenAuth";
 import { RewriteStudio } from "./pages/RewriteStudio";
 import { Documents, Reports, Settings, Usage } from "./pages/WorkspacePages";
 export default function App() {
@@ -12,6 +13,8 @@ export default function App() {
       <Route path="/login" element={<Auth />} />
       <Route path="/register" element={<Auth />} />
       <Route path="/forgot-password" element={<Auth />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Dashboard />} />
         <Route path="rewrite" element={<RewriteStudio />} />
