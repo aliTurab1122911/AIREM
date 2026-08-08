@@ -7,7 +7,7 @@ RUN groupadd --system --gid 999 airem \
     && install --directory --owner=airem --group=airem --mode=0750 /app/workspace
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt gunicorn
-COPY --chown=airem:airem app.py processor_app.py ./
+COPY --chown=airem:airem app.py processor_app.py processor_api.py ./
 COPY --chown=airem:airem scripts ./scripts
 COPY --chown=airem:airem templates ./templates
 COPY --chown=airem:airem docker/processor-entrypoint.sh /usr/local/bin/processor-entrypoint
