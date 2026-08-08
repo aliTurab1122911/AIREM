@@ -7,9 +7,12 @@ RUN groupadd --system --gid 999 airem \
     && install --directory --owner=airem --group=airem --mode=0750 /app/workspace
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt gunicorn
-COPY --chown=airem:airem app.py processor_app.py processor_api.py ./
+COPY --chown=airem:airem app.py processor_app.py processor_api.py processor_range_api.py ./
 COPY --chown=airem:airem scripts ./scripts
 COPY --chown=airem:airem templates ./templates
+# The deterministic fixture generator is used only by the isolated full-stack
+# Playwright acceptance test; it has no production route or runtime import.
+COPY --chown=airem:airem e2e/fixtures/generate_turnitin_fixture.py ./e2e/fixtures/generate_turnitin_fixture.py
 COPY --chown=airem:airem docker/processor-entrypoint.sh /usr/local/bin/processor-entrypoint
 USER airem
 EXPOSE 5000
