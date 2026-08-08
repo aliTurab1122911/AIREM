@@ -48,7 +48,16 @@ services:
       - "/tmp:uid=1000,gid=1000,mode=0700"
     depends_on: {postgres: {condition: service_healthy}}
     networks: [backend]
-    healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/healthz').then(response => process.exit(response.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy: {resources: {limits: {cpus: "0.50", memory: 256M}}}
 
   gateway:
@@ -69,7 +78,16 @@ services:
       redis: {condition: service_healthy}
       processor: {condition: service_healthy}
     networks: [backend]
-    healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/healthz').then(response => process.exit(response.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy: {resources: {limits: {cpus: "1.0", memory: 512M}}}
 
   processor:
