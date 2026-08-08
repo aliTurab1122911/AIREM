@@ -72,19 +72,6 @@ services:
     healthcheck: {test: [CMD, wget, -qO-, http://127.0.0.1:4000/healthz], interval: 15s, timeout: 5s, retries: 5, start_period: 15s}
     deploy: {resources: {limits: {cpus: "1.0", memory: 512M}}}
 
-  documents-init:
-    build: {context: ., dockerfile: Dockerfile.python}
-    user: "0:0"
-    entrypoint: [chown]
-    command: [-R, "999:999", /app/workspace]
-    restart: "no"
-    network_mode: none
-    read_only: true
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    volumes: [documents:/app/workspace]
-
   processor:
     <<: *service-defaults
     build: {context: ., dockerfile: Dockerfile.python}
@@ -93,8 +80,6 @@ services:
     volumes: [documents:/app/workspace]
     tmpfs:
       - "/tmp:uid=999,gid=999,mode=0700"
-    depends_on:
-      documents-init: {condition: service_completed_successfully}
     networks: [backend]
     healthcheck: {test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"], interval: 20s, timeout: 5s, retries: 5, start_period: 30s}
     deploy: {resources: {limits: {cpus: "2.0", memory: 2G}}}

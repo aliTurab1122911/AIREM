@@ -230,10 +230,11 @@ docker run --rm -v airem_documents:/target -v "$PWD/backups:/backup:ro" alpine \
 docker compose up -d
 ```
 
-On startup, the one-shot `documents-init` service restores ownership of the
-mounted `/app/workspace` tree to the processor's non-root `airem` user. This
-also makes files from an older backup or Docker-created volume writable before
-the processor starts.
+The processor image creates `/app/workspace` with UID/GID `999:999` before the
+named volume is mounted. Docker copies those permissions into a newly created
+empty `documents` volume, allowing the processor to remain non-root without a
+privileged ownership-initialization container. Restored archives must preserve
+that numeric ownership.
 
 ### Upgrades and teardown
 
