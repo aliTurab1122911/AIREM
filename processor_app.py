@@ -1,8 +1,9 @@
-"""Production composition wrapper for the AIREM v21 Flask processor.
+"""Production composition wrapper for the AIREM v21 Python domain processor.
 
-The legacy Jinja application remains intact. Production additionally registers a
-resource-oriented JSON compatibility API so React/gateway callers do not need to
-interpret rendered HTML responses.
+The protected v21 application/services remain authoritative for processing
+semantics. Production browser traffic does not expose the historical Jinja route
+tree: the Fastify gateway calls the structured /internal/v1 blueprints registered
+here, while artifact streaming remains an internal processor capability.
 """
 
 from pathlib import Path
@@ -13,19 +14,12 @@ from app import app, get_job
 from processor_api import api_bp
 from processor_range_api import range_api_bp
 
-
 app.register_blueprint(api_bp)
 app.register_blueprint(range_api_bp)
 
-
 @app.before_request
 def protect_immutable_json_extraction():
-    """Do not let an API client overwrite the fixed v21 extraction map.
-
-    A document job receives exactly one JSON extraction. A different selection
-    requires a new upload/job, keeping every later rewrite/cycle/reinsertion tied
-    to one immutable source mapping.
-    """
+    """Do not let an API client overwrite the fixed v21 extraction map."""
     if request.method != "POST":
         return None
     parts = request.path.strip("/").split("/")
@@ -47,8 +41,7 @@ def protect_immutable_json_extraction():
         },
     }), 409
 
-
 @app.get("/healthz")
 def healthz():
-    """Report that the Python processor imported and is serving requests."""
+    """Report that the internal v21 processor API imported and is serving."""
     return {"ok": True, "service": "airem-processor", "engine": "v21", "json_api": "internal/v1"}
