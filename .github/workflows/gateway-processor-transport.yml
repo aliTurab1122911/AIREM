@@ -1,0 +1,68 @@
+name: Gateway Processor Transport
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transport:
+    name: Real gateway to Flask transport
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install gateway dependencies
+        run: npm ci
+
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+
+      - name: Build processor image
+        run: docker build -t airem-processor:transport -f Dockerfile.python .
+
+      - name: Start processor directly
+        run: docker run -d --name airem-processor-transport -p 5000:5000 airem-processor:transport
+
+      - name: Wait for processor readiness
+        run: |
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:5000/healthz >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs airem-processor-transport
+          exit 1
+
+      - name: Build a valid DOCX larger than 2 MB
+        run: |
+          mkdir -p tmp
+          cp docs/sample_1_org.docx tmp/transport-large.docx
+          python - <<'PY'
+          from pathlib import Path
+          import os, zipfile
+          path = Path('tmp/transport-large.docx')
+          with zipfile.ZipFile(path, 'a', compression=zipfile.ZIP_STORED) as archive:
+              archive.writestr('word/media/transport-padding.bin', os.urandom(2_300_000))
+          assert path.stat().st_size > 2 * 1024 * 1024, path.stat().st_size
+          print(path.stat().st_size)
+          PY
+
+      - name: Run real gateway against real Flask processor
+        env:
+          FLASK_ORIGIN: http://127.0.0.1:5000
+          TRANSPORT_DOCX: tmp/transport-large.docx
+        run: npx tsx services/gateway/tests/real-processor-transport.ts
+
+      - name: Processor logs
+        if: always()
+        run: docker logs airem-processor-transport || true
+
+      - name: Stop processor
+        if: always()
+        run: docker rm -f airem-processor-transport || true

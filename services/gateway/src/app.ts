@@ -19,32 +19,61 @@ const MUTATIONS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const BODYLESS = new Set(['GET', 'HEAD']);
 const RESPONSE_METADATA_LIMIT = 2 * 1024 * 1024;
 
+type ForwardBody = NodeJS.ReadableStream | Buffer | string;
 type UpstreamResponse = { statusCode: number; headers: Record<string, string | string[] | undefined>; body: NodeJS.ReadableStream };
-export type Upstream = (args: { method: string; path: string; headers: Record<string, string | string[] | undefined>; body?: NodeJS.ReadableStream }) => Promise<UpstreamResponse>;
+export type Upstream = (args: { method: string; path: string; headers: Record<string, string | string[] | undefined>; body?: ForwardBody }) => Promise<UpstreamResponse>;
 
 function uploadExtension(contentDisposition: string, extensions: readonly string[]) {
   const match = /filename\*?=(?:UTF-8''|"?)([^";\r\n]+)/i.exec(contentDisposition);
   if (!match) return undefined;
-  const filename = decodeURIComponent(match[1].replace(/"$/, '')).toLowerCase();
+  let filename: string;
+  try { filename = decodeURIComponent(match[1].replace(/"$/, '')).toLowerCase(); }
+  catch { filename = match[1].replace(/"$/, '').toLowerCase(); }
   return extensions.find(extension => filename.endsWith(extension));
 }
 
 async function validateMultipart(payload: NodeJS.ReadableStream, field: string, extensions: readonly string[]) {
   const iterator = (payload as AsyncIterable<Buffer>)[Symbol.asyncIterator]();
-  const buffered: Buffer[] = []; let inspected = ''; let inspectedBytes = 0; let extension: string | undefined;
-  while ((!extension || !new RegExp(`name="${field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(inspected)) && inspectedBytes < 256 * 1024) {
+  const buffered: Buffer[] = [];
+  let headerWindow = '';
+  let inspectedBytes = 0;
+  let fieldSeen = false;
+  let filenameSeen = false;
+  let extension: string | undefined;
+  const escapedField = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const fieldPattern = new RegExp(`name="${escapedField}"`, 'i');
+
+  while ((!fieldSeen || !filenameSeen || !extension) && inspectedBytes < 256 * 1024) {
     const next = await iterator.next();
     if (next.done) break;
-    const chunk = Buffer.from(next.value); buffered.push(chunk); inspectedBytes += chunk.length;
-    inspected += chunk.toString('latin1');
-    const filename = /filename\*?=(?:UTF-8''|"?)([^";\r\n]+)/i.exec(inspected)?.[0] ?? '';
-    extension = uploadExtension(filename, extensions);
-    if (filename && !extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
-    if (extension && !extensions.includes(extension)) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
-    if (inspected.length > 4096) inspected = inspected.slice(-4096);
+    const chunk = Buffer.from(next.value);
+    buffered.push(chunk);
+    inspectedBytes += chunk.length;
+    headerWindow += chunk.toString('latin1');
+
+    if (!fieldSeen && fieldPattern.test(headerWindow)) fieldSeen = true;
+    if (!filenameSeen) {
+      const disposition = /Content-Disposition:[^\r\n]*filename\*?=(?:UTF-8''|"?)[^;\r\n]+/i.exec(headerWindow)?.[0];
+      if (disposition) {
+        filenameSeen = true;
+        extension = uploadExtension(disposition, extensions);
+        if (!extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
+      }
+    }
+
+    // Keep only a boundary/header tail for split-header detection. The durable
+    // booleans above retain facts already discovered, so large first chunks can
+    // no longer erase the field/filename state before validation completes.
+    if (headerWindow.length > 16 * 1024) headerWindow = headerWindow.slice(-16 * 1024);
   }
-  if (!extension || !new RegExp(`name="${field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(inspected)) throw Object.assign(new Error('multipart upload field missing'), { statusCode: 400 });
-  async function* replay() { for (const chunk of buffered) yield chunk; for await (const chunk of { [Symbol.asyncIterator]: () => iterator } as AsyncIterable<Buffer>) yield chunk; }
+
+  if (!fieldSeen || !filenameSeen) throw Object.assign(new Error('multipart upload field missing'), { statusCode: 400 });
+  if (!extension) throw Object.assign(new Error('unsupported upload extension'), { statusCode: 415 });
+
+  async function* replay() {
+    for (const chunk of buffered) yield chunk;
+    for await (const chunk of { [Symbol.asyncIterator]: () => iterator } as AsyncIterable<Buffer>) yield chunk;
+  }
   return Readable.from(replay());
 }
 
@@ -52,6 +81,15 @@ function cleanHeaders(headers: FastifyRequest['headers'], requestId: string) {
   const result: Record<string, string | string[] | undefined> = { ...headers, 'x-request-id': requestId };
   for (const name of ['host', 'cookie', 'authorization', 'content-length', 'connection', 'transfer-encoding']) delete result[name];
   return result;
+}
+
+function upstreamFailureClass(error: unknown) {
+  const failure = error as { name?: string; code?: string; message?: string };
+  const code = String(failure.code ?? '').toUpperCase();
+  const name = String(failure.name ?? 'Error');
+  if (code.includes('TIMEOUT') || name.toLowerCase().includes('timeout')) return 'timeout';
+  if (['ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ECONNRESET'].includes(code)) return 'connectivity';
+  return 'transport';
 }
 
 export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upstream, queue?: JobQueue) {
@@ -66,8 +104,11 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
   app.addContentTypeParser('*', (_request, payload, done) => done(null, payload));
   const dispatch: Upstream = upstream ?? (async args => {
     const response = await undiciRequest(new URL(args.path, cfg.FLASK_ORIGIN), {
-      method: args.method as Dispatcher.HttpMethod, headers: args.headers, body: args.body as Readable | undefined,
-      headersTimeout: cfg.UPSTREAM_HEADERS_TIMEOUT_MS, bodyTimeout: cfg.UPSTREAM_BODY_TIMEOUT_MS,
+      method: args.method as Dispatcher.HttpMethod,
+      headers: args.headers,
+      body: args.body as any,
+      headersTimeout: cfg.UPSTREAM_HEADERS_TIMEOUT_MS,
+      bodyTimeout: cfg.UPSTREAM_BODY_TIMEOUT_MS,
     });
     return response as unknown as UpstreamResponse;
   });
@@ -84,7 +125,7 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
   app.setErrorHandler((error, request, reply) => {
     const failure = error as Error & { statusCode?: number };
     request.log.warn({ err: { name: failure.name, message: failure.message }, requestId: request.id }, 'gateway request rejected');
-    const status = (error as { statusCode?: number }).statusCode ?? 502;
+    const status = failure.statusCode ?? 502;
     return reply.status(status).send({ error: { code: status === 413 ? 'UPLOAD_TOO_LARGE' : status === 429 ? 'RATE_LIMITED' : 'GATEWAY_ERROR' }, requestId: request.id });
   });
 
@@ -97,12 +138,12 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
     if (jobId && !await store.owns(userId, jobId)) return reply.status(404).send({ error: { code: 'JOB_NOT_FOUND' }, requestId: request.id });
 
     const contentType = request.headers['content-type'] ?? '';
-    let requestBody = request.body as NodeJS.ReadableStream;
+    let requestBody: ForwardBody = request.body as NodeJS.ReadableStream;
     if (contentType.startsWith('multipart/form-data')) {
       const length = Number(request.headers['content-length'] ?? 0);
       if (length && length > cfg.UPLOAD_MAX_BYTES) return reply.status(413).send({ error: { code: 'UPLOAD_TOO_LARGE' }, requestId: request.id });
       if (!route.multipart) return reply.status(415).send({ error: { code: 'UNSUPPORTED_MEDIA_TYPE' }, requestId: request.id });
-      try { requestBody = await validateMultipart(requestBody, route.multipart.field, route.multipart.extensions); }
+      try { requestBody = await validateMultipart(requestBody as NodeJS.ReadableStream, route.multipart.field, route.multipart.extensions); }
       catch (error) { const status = (error as { statusCode?: number }).statusCode ?? 415; return reply.status(status).send({ error: { code: status === 400 ? 'VALIDATION_ERROR' : 'UNSUPPORTED_FILE_TYPE' }, requestId: request.id }); }
     } else if (route.bodySchema && !BODYLESS.has(request.method)) {
       if (!contentType.includes('application/json')) return reply.status(415).send({ error: { code: 'UNSUPPORTED_MEDIA_TYPE' }, requestId: request.id });
@@ -110,7 +151,7 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
       let value: unknown; try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply.status(400).send({ error: { code: 'INVALID_JSON' }, requestId: request.id }); }
       const parsed = route.bodySchema.safeParse(value);
       if (!parsed.success) return reply.status(422).send({ error: { code: 'VALIDATION_ERROR', issues: parsed.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })) }, requestId: request.id });
-      requestBody = Readable.from(route.encode ? route.encode(parsed.data) : JSON.stringify(parsed.data));
+      requestBody = Buffer.from(route.encode ? route.encode(parsed.data) : JSON.stringify(parsed.data), 'utf8');
     }
 
     const started = Date.now();
@@ -118,7 +159,29 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
     const query = request.url.includes('?') ? `?${request.url.split('?', 2)[1]}` : '';
     const forwardedHeaders = cleanHeaders(request.headers, request.id);
     if (route.encode) forwardedHeaders['content-type'] = 'application/x-www-form-urlencoded';
-    const response = await dispatch({ method: request.method, path: `${upstreamPath}${query}`, headers: forwardedHeaders, body: BODYLESS.has(request.method) ? undefined : requestBody });
+    if (Buffer.isBuffer(requestBody) || typeof requestBody === 'string') forwardedHeaders['content-length'] = String(Buffer.byteLength(requestBody));
+
+    let response: UpstreamResponse;
+    try {
+      response = await dispatch({ method: request.method, path: `${upstreamPath}${query}`, headers: forwardedHeaders, body: BODYLESS.has(request.method) ? undefined : requestBody });
+    } catch (error) {
+      const failureClass = upstreamFailureClass(error);
+      const failure = error as { name?: string; code?: string };
+      request.log.error({
+        requestId: request.id,
+        userId,
+        method: request.method,
+        path: request.routeOptions.url,
+        upstreamPath,
+        failureClass,
+        errorName: failure.name ?? 'Error',
+        errorCode: failure.code ?? null,
+        durationMs: Date.now() - started,
+      }, 'processor upstream request failed');
+      const code = failureClass === 'timeout' ? 'PROCESSOR_TIMEOUT' : 'PROCESSOR_UNAVAILABLE';
+      return reply.status(502).send({ error: { code }, requestId: request.id });
+    }
+
     const responseType = String(response.headers['content-type'] ?? '');
     const isDownload = responseType.includes('application/pdf') || responseType.includes('officedocument') || String(response.headers['content-disposition'] ?? '').includes('attachment');
     const responseHeaders: Record<string, string | string[] | undefined> = { ...response.headers, 'x-request-id': request.id };
@@ -127,7 +190,7 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
 
     if (isDownload) {
       request.log.info({ requestId: request.id, userId, method: request.method, path: request.routeOptions.url, statusCode: response.statusCode, durationMs: Date.now() - started }, 'gateway access');
-      return reply.send(response.body); // stream, never materialise document bytes
+      return reply.send(response.body);
     }
 
     const chunks: Buffer[] = []; let size = 0;
@@ -154,6 +217,17 @@ export async function buildApp(store: GatewayStore, cfg: Config, upstream?: Upst
   registerTextRewriteAdapter(app, handler); registerDetectionAdapter(app, handler);
   registerFormattingAdapter(app, handler); registerDownloadAdapter(app, handler);
   registerOpenAiRangeEditAdapter(app, handler);
-  app.get('/healthz', { config: { rateLimit: false } }, async () => ({ ok: true }));
+
+  app.get('/healthz', { config: { rateLimit: false } }, async (_request, reply) => {
+    try {
+      const response = await dispatch({ method: 'GET', path: '/healthz', headers: { 'x-request-id': randomUUID() } });
+      for await (const _chunk of response.body as AsyncIterable<Buffer>) { /* drain */ }
+      if (response.statusCode < 200 || response.statusCode >= 300) return reply.status(503).send({ ok: false, service: 'airem-gateway', processor: 'not-ready' });
+      return { ok: true, service: 'airem-gateway', processor: 'ready' };
+    } catch (error) {
+      app.log.warn({ failureClass: upstreamFailureClass(error) }, 'processor readiness check failed');
+      return reply.status(503).send({ ok: false, service: 'airem-gateway', processor: 'unreachable' });
+    }
+  });
   return app;
 }
