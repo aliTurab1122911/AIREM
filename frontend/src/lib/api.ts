@@ -20,7 +20,12 @@ export async function request<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: {
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
+      ...options.headers,
+    },
     credentials: "include",
   });
   if (!response.ok) {
@@ -78,6 +83,48 @@ export interface ProcessingJob {
 }
 
 export const api = {
+  uploadDocument: (file: File) => {
+    const body = new FormData();
+    body.append("docx_file", file);
+    return request<Record<string, unknown>>("/api/documents/upload", {
+      method: "POST",
+      body,
+    });
+  },
+  documentJob: (id: string) =>
+    request<Record<string, unknown>>(`/api/documents/jobs/${id}`),
+  extractRanges: (id: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/ranges/${id}/extract`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  rewriteProfiles: () =>
+    request<Record<string, unknown>>("/api/rewrite/profiles"),
+  rewriteDocument: (id: string, payload: Record<string, unknown>, cycle = false) =>
+    request<Record<string, unknown>>(`/api/rewrite/${id}${cycle ? "/cycles" : ""}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  validateDocument: (id: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/validation/${id}`, { method: "POST", body: JSON.stringify(payload) }),
+  reinsertDocument: (id: string, payload: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/reinsertion/${id}`, { method: "POST", body: JSON.stringify(payload) }),
+  rewriteText: (payload: { text: string; profile?: string; intensity?: number }) =>
+    request<Record<string, unknown>>("/api/text/rewrite", { method: "POST", body: JSON.stringify(payload) }),
+  detectText: (text: string) =>
+    request<Record<string, unknown>>("/api/detection/text", { method: "POST", body: JSON.stringify({ text }) }),
+  detectFile: (file: File) => {
+    const body = new FormData(); body.append("file", file);
+    return request<Record<string, unknown>>("/api/detection/file", { method: "POST", body });
+  },
+  analyseFormatting: (file: File) => {
+    const body = new FormData(); body.append("docx_file", file);
+    return request<Record<string, unknown>>("/api/formatting/analyse", { method: "POST", body });
+  },
+  applyFormatting: (id: string, settings: Record<string, string | number | boolean>) =>
+    request<Record<string, unknown>>(`/api/formatting/apply/${id}`, { method: "POST", body: JSON.stringify({ settings }) }),
+  downloadUrl: (id: string, filename: string) =>
+    `${API_BASE_URL}/api/documents/download/${id}/${encodeURIComponent(filename)}`,
   accountDashboard: () =>
     request<import("../features/dashboard/types").AccountDashboard>(
       "/api/account/dashboard",

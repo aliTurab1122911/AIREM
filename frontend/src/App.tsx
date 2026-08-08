@@ -3,7 +3,8 @@ import { AppShell } from "./components/AppShell";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Landing } from "./pages/Landing";
-import { Placeholder } from "./pages/Placeholder";
+import { RewriteStudio } from "./pages/RewriteStudio";
+import { Documents, Reports, Settings, Usage } from "./pages/WorkspacePages";
 export default function App() {
   return (
     <Routes>
@@ -13,11 +14,11 @@ export default function App() {
       <Route path="/forgot-password" element={<Auth />} />
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Dashboard />} />
-        <Route path="rewrite" element={<Placeholder />} />
-        <Route path="documents" element={<Placeholder />} />
-        <Route path="reports" element={<Placeholder />} />
-        <Route path="billing" element={<Placeholder />} />
-        <Route path="settings" element={<Placeholder />} />
+        <Route path="rewrite" element={<RewriteStudio />} />
+        <Route path="documents" element={<Documents />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="billing" element={<Usage />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
