@@ -31,6 +31,55 @@ export const rangeSelectionRequestSchema = z.object({
   if (v.selection_mode === 'visual' && !v.visual_ranges?.length) ctx.addIssue({ code: 'custom', path: ['visual_ranges'], message: 'visual selection requires visual_ranges' });
 });
 
+// The browser preview is the processor's immutable inventory of the uploaded DOCX.
+export const visualRunSchema = z.object({
+  text: z.string(), bold: z.boolean(), italic: z.boolean(), underline: z.boolean(),
+  font_name: z.string().nullable(), font_size_pt: z.number().nullable(), colour: z.string().nullable(),
+}).strict();
+export const paragraphVisualLocationSchema = z.object({
+  kind: z.literal('paragraph'), body_paragraph_index: z.number().int().nonnegative(),
+}).strict();
+export const tableVisualLocationSchema = z.object({
+  kind: z.literal('table_cell_paragraph'), table_index: z.number().int().nonnegative(),
+  row_index: z.number().int().nonnegative(), col_index: z.number().int().nonnegative(),
+  cell_paragraph_index: z.number().int().nonnegative(),
+}).strict();
+export const visualLocationSchema = z.discriminatedUnion('kind', [paragraphVisualLocationSchema, tableVisualLocationSchema]);
+export const visualElementSchema = z.object({
+  visual_id: z.string().min(1), order: z.number().int().nonnegative(), text: z.string(), word_count: z.number().int().nonnegative(),
+  runs: z.array(visualRunSchema), style: z.string(), alignment: z.enum(['left','center','right','justify']),
+  left_indent_pt: z.number(), first_line_indent_pt: z.number(), list_item: z.boolean(), location: visualLocationSchema,
+}).strict();
+export const paragraphBlockSchema = z.object({
+  block_id: z.string().min(1), order: z.number().int().nonnegative(), type: z.literal('paragraph'),
+  paragraph_index: z.number().int().nonnegative(), text: z.string(), preview: z.string(), style: z.string(),
+  heading_level: z.number().int().positive().nullable(), heading_path: z.array(z.string()), is_heading: z.boolean(), is_caption: z.boolean(),
+  word_count: z.number().int().nonnegative(), default_selected: z.boolean(), visual: visualElementSchema,
+}).strict();
+export const tableCellPreviewSchema = z.object({
+  row_index: z.number().int().nonnegative(), column_index: z.number().int().nonnegative(), paragraphs: z.array(visualElementSchema),
+}).strict();
+export const tableRowPreviewSchema = z.object({
+  row_index: z.number().int().nonnegative(), cells: z.array(tableCellPreviewSchema),
+}).strict();
+export const tableBlockSchema = z.object({
+  block_id: z.string().min(1), order: z.number().int().nonnegative(), type: z.literal('table'),
+  table_index: z.number().int().nonnegative(), text: z.string(), preview: z.string(), style: z.string(), heading_level: z.null(),
+  heading_path: z.array(z.string()), is_heading: z.literal(false), is_caption: z.literal(false), rows: z.number().int().nonnegative(),
+  columns: z.number().int().nonnegative(), headers: z.array(z.string()), word_count: z.number().int().nonnegative(),
+  default_selected: z.boolean(), rendered_rows: z.array(tableRowPreviewSchema),
+}).strict();
+export const documentBlockSchema = z.discriminatedUnion('type', [paragraphBlockSchema, tableBlockSchema]);
+export const pageSettingsSchema = z.object({
+  page_width_pt: z.number().optional(), page_height_pt: z.number().optional(), margin_top_pt: z.number().optional(),
+  margin_bottom_pt: z.number().optional(), margin_left_pt: z.number().optional(), margin_right_pt: z.number().optional(),
+}).passthrough();
+export const documentInventorySchema = z.object({
+  blocks: z.array(documentBlockSchema), visual_elements: z.array(visualElementSchema), visual_element_count: z.number().int().nonnegative(),
+  block_count: z.number().int().nonnegative(), paragraph_count: z.number().int().nonnegative(), table_count: z.number().int().nonnegative(),
+  default_selected_count: z.number().int().nonnegative(), word_count: z.number().int().nonnegative(), page: pageSettingsSchema,
+}).strict();
+
 // Exactly the names accepted by app.py::_resolve_rewrite_profile today.
 export const rewriteProfileSchema = z.enum(['light','natural','rewrite_compress','compress','plain','expanded','conservative','balanced','manual']);
 export const rewriteEngineSchema = z.enum(['linguistic','legacy']);
@@ -79,8 +128,8 @@ export const publicJobSchema = z.object({
   selection_mode: selectionModeSchema.nullable().optional(), selected_block_count: z.number().int().nonnegative(), visual_range_count: z.number().int().nonnegative(),
   rewrite_cycle_count: z.number().int().nonnegative(), rewrite_pass_count: z.number().int().nonnegative(), has_extraction: z.boolean(), has_final_document: z.boolean(), download_url: z.string().optional(),
 }).strict();
-export const documentUploadResponseSchema = z.object({ ok: z.literal(true), job_id: jobIdSchema, job: publicJobSchema, inventory: jsonRecordSchema }).strict();
-export const documentJobResponseSchema = z.object({ ok: z.literal(true), job: publicJobSchema, inventory: jsonRecordSchema.nullable(), mapping: jsonRecordSchema.nullable() }).strict();
+export const documentUploadResponseSchema = z.object({ ok: z.literal(true), job_id: jobIdSchema, job: publicJobSchema, inventory: documentInventorySchema }).strict();
+export const documentJobResponseSchema = z.object({ ok: z.literal(true), job: publicJobSchema, inventory: documentInventorySchema.nullable(), mapping: jsonRecordSchema.nullable() }).strict();
 export const extractionChunkSchema = z.object({
   chunk_number: z.number().int().positive(), extract_file: z.string(), edited_template_file: z.string(), section_indices: z.array(z.number().int().nonnegative()),
   section_count: z.number().int().nonnegative(), word_count: z.number().int().nonnegative(), text: z.string(),
@@ -118,6 +167,10 @@ export const jobResponseSchema = z.object({ job_id: jobIdSchema, state: progress
 
 export type SelectionMode = z.infer<typeof selectionModeSchema>;
 export type VisualRange = z.infer<typeof visualRangeSchema>;
+export type VisualRun = z.infer<typeof visualRunSchema>;
+export type VisualElement = z.infer<typeof visualElementSchema>;
+export type DocumentBlock = z.infer<typeof documentBlockSchema>;
+export type DocumentInventory = z.infer<typeof documentInventorySchema>;
 export type RangeSelectionRequest = z.infer<typeof rangeSelectionRequestSchema>;
 export type RewriteProfile = z.infer<typeof rewriteProfileSchema>;
 export type RewriteEngine = z.infer<typeof rewriteEngineSchema>;
