@@ -34,6 +34,62 @@ function mergeMappedRanges(current: VisualRange[], mapped: VisualRange[]) {
   });
 }
 
+function domPointAtOffset(root: Element, target: number) {
+  let remaining = Math.max(0, target);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  let last: Node = root;
+  while (node) {
+    last = node;
+    const length = node.nodeValue?.length ?? 0;
+    if (remaining <= length) return { node, offset: remaining };
+    remaining -= length;
+    node = walker.nextNode();
+  }
+  return last.nodeType === Node.TEXT_NODE
+    ? { node: last, offset: last.nodeValue?.length ?? 0 }
+    : { node: root, offset: root.childNodes.length };
+}
+
+function domRangeFor(item: VisualRange) {
+  const startEl = document.querySelector(`[data-visual-id="${CSS.escape(item.start_id)}"]`);
+  const endEl = document.querySelector(`[data-visual-id="${CSS.escape(item.end_id)}"]`);
+  if (!startEl || !endEl) return null;
+  const start = domPointAtOffset(startEl, item.start_offset);
+  const end = domPointAtOffset(endEl, item.end_offset);
+  try {
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    return range;
+  } catch { return null; }
+}
+
+function paintVisualRanges(ranges: VisualRange[]) {
+  document.querySelectorAll(".word-selectable-text.mapped-fallback").forEach(element => element.classList.remove("mapped-fallback", "turnitin-fallback"));
+  const css = CSS as unknown as { highlights?: { set: (name: string, highlight: unknown) => void; delete: (name: string) => void } };
+  const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+  if (css.highlights && HighlightCtor) {
+    const manual: Range[] = [];
+    const mapped: Range[] = [];
+    for (const item of ranges) {
+      const range = domRangeFor(item);
+      if (!range) continue;
+      (isTurnitinRange(item) ? mapped : manual).push(range);
+    }
+    css.highlights.set("manual-selected", new HighlightCtor(...manual));
+    css.highlights.set("turnitin-mapped", new HighlightCtor(...mapped));
+    return;
+  }
+  for (const item of ranges) {
+    for (const id of new Set([item.start_id, item.end_id])) {
+      const element = document.querySelector(`[data-visual-id="${CSS.escape(id)}"]`);
+      element?.classList.add("mapped-fallback");
+      if (isTurnitinRange(item)) element?.classList.add("turnitin-fallback");
+    }
+  }
+}
+
 export function TurnitinRangeStudio({ jobId, visualRanges, onVisualRangesChange, onContinue, disabled }: Props) {
   const [pdf, setPdf] = useState<File>();
   const [turnitin, setTurnitin] = useState<TurnitinUploadResponse>();
@@ -55,6 +111,15 @@ export function TurnitinRangeStudio({ jobId, visualRanges, onVisualRangesChange,
       setModel(response.configuration.default_model);
     }).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    paintVisualRanges(visualRanges);
+    return () => {
+      const css = CSS as unknown as { highlights?: { delete: (name: string) => void } };
+      css.highlights?.delete("manual-selected");
+      css.highlights?.delete("turnitin-mapped");
+    };
+  }, [visualRanges]);
 
   const mappedCount = useMemo(() => visualRanges.filter(isTurnitinRange).length, [visualRanges]);
   const manualCount = visualRanges.length - mappedCount;
