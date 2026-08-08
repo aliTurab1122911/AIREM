@@ -14,5 +14,11 @@ export type AdapterRoute = {
 export type AdapterHandler = (route: AdapterRoute) => (request: FastifyRequest, reply: unknown) => Promise<unknown>;
 
 export function registerAdapter(app: FastifyInstance, handler: AdapterHandler, routes: AdapterRoute[]) {
-  for (const route of routes) app.route({ method: route.method, url: route.url, handler: handler(route) as never });
+  const expensiveMax = (handler as AdapterHandler & { expensiveRateLimit?: number }).expensiveRateLimit;
+  for (const route of routes) app.route({
+    method: route.method,
+    url: route.url,
+    config: route.method === 'POST' && expensiveMax ? { rateLimit: { max: expensiveMax, timeWindow: '1 minute' } } : undefined,
+    handler: handler(route) as never,
+  });
 }

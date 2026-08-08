@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 COPY --chown=airem:airem app.py ./
 COPY --chown=airem:airem scripts ./scripts
 COPY --chown=airem:airem templates ./templates
+COPY --chown=airem:airem docker/processor-entrypoint.sh /usr/local/bin/processor-entrypoint
 USER airem
 EXPOSE 5000
-CMD ["gunicorn", "--bind=0.0.0.0:5000", "--workers=2", "--threads=1", "--timeout=120", "--graceful-timeout=30", "--keep-alive=5", "app:app"]
+ENTRYPOINT ["processor-entrypoint"]

@@ -82,7 +82,7 @@ services:
   processor:
     <<: *service-defaults
     build: {context: ., dockerfile: Dockerfile.python}
-    environment: {OPENAI_API_KEY: "${OPENAI_API_KEY:-}", OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5-mini}"}
+    environment: {OPENAI_API_KEY: "${OPENAI_API_KEY:-}", OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5-mini}", PROCESSOR_WORKERS: "${PROCESSOR_WORKERS:-2}"}
     expose: ["5000"]
     volumes: [documents:/app/workspace]
     tmpfs: [/tmp:uid=999,gid=999,mode=0700]
