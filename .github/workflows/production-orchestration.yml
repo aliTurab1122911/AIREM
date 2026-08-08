@@ -1,0 +1,133 @@
+name: Production Orchestration Parity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-and-unit:
+    name: Orchestration contracts and invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Verify protected processing baseline
+        run: python ci/verify_protected_processing.py
+      - name: Install JavaScript workspaces
+        run: npm ci
+      - name: Build canonical contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+      - name: Run orchestration and gateway regressions
+        run: npm test --workspace @airem/gateway -- --run tests/orchestration.test.ts tests/integration.test.ts
+
+  real-stack:
+    name: BullMQ parity and exactly-once charging
+    needs: contracts-and-unit
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: airem-orchestration-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_orchestration_e2e
+      POSTGRES_PASSWORD: e2e-postgres-password
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: e2e@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install Playwright workspace
+        run: npm ci
+        working-directory: e2e
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: mkdir -p deploy/tls && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build production images
+        run: docker compose build accounts gateway processor worker frontend
+      - name: Start stateful dependencies
+        run: docker compose up -d postgres redis --wait --wait-timeout 120
+      - name: Apply account and gateway migrations before service health checks
+        run: |
+          docker compose run --rm accounts node dist/migrate.js
+          docker compose run --rm gateway node dist/migrate.js
+      - name: Start processor, BullMQ worker and public application
+        run: docker compose up -d processor worker gateway accounts frontend --wait --wait-timeout 240
+      - name: Require processor plus worker readiness
+        run: |
+          body=$(curl --fail --silent --show-error --insecure --retry 15 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz)
+          echo "$body"
+          echo "$body" | grep -q '"workersAvailable":true'
+      - name: Prove completion and charging are exactly once
+        run: |
+          docker compose exec -T gateway node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import { completeOrchestrationJob } from './dist/orchestration-db.js';
+          import { PostgresGatewayStore } from './dist/store.js';
+          const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+          const client = await pool.connect();
+          let userId;
+          try {
+            const user = await client.query("INSERT INTO users(email,password_hash,display_name,email_verified) VALUES($1,'probe-hash','Orchestration probe',true) RETURNING id", [`orchestration-probe-${Date.now()}@example.test`]);
+            userId = user.rows[0].id;
+            await client.query("INSERT INTO account_usage(user_id,words_used,word_allowance,period_start,period_end) VALUES($1,0,1000,date_trunc('month',now()),date_trunc('month',now())+interval '1 month')", [userId]);
+            const made = await client.query("INSERT INTO orchestration_jobs(id,user_id,idempotency_key,operation,request,state,progress,expires_at) VALUES(gen_random_uuid(),$1,'atomic-completion','text_rewrite',$2,'processing',80,now()+interval '1 hour') RETURNING id", [userId, { text: 'atomic probe' }]);
+            const jobId = made.rows[0].id;
+            const result = { ok: true, original_words: 37, rewritten_text: 'deterministic output' };
+            const first = await completeOrchestrationJob(pool, { id: jobId, result, words: 37, reviewRequired: false, ttlHours: 1 });
+            const second = await completeOrchestrationJob(pool, { id: jobId, result, words: 37, reviewRequired: false, ttlHours: 1 });
+            if (first !== 'completed' || second !== 'already_terminal') throw new Error(`unexpected completion states ${first}/${second}`);
+            const charge = await client.query('SELECT count(*)::int count,coalesce(sum(words),0)::int words FROM orchestration_usage_charges WHERE job_id=$1', [jobId]);
+            const usage = await client.query('SELECT words_used FROM account_usage WHERE user_id=$1', [userId]);
+            const history = await client.query('SELECT coalesce(sum(words_processed),0)::int words FROM usage_history WHERE user_id=$1', [userId]);
+            const outputs = await client.query('SELECT count(*)::int count FROM orchestration_outputs WHERE job_id=$1', [jobId]);
+            if (charge.rows[0].count !== 1 || charge.rows[0].words !== 37) throw new Error('usage charge was not exactly once');
+            if (Number(usage.rows[0].words_used) !== 37) throw new Error('account usage was double charged');
+            if (history.rows[0].words !== 37) throw new Error('usage history was double charged');
+            if (outputs.rows[0].count !== 1) throw new Error('output was published more than once');
+
+            const cancelled = await client.query("INSERT INTO orchestration_jobs(id,user_id,idempotency_key,operation,request,state,progress,expires_at) VALUES(gen_random_uuid(),$1,'cancelled-completion','text_rewrite',$2,'processing',25,now()+interval '1 hour') RETURNING id", [userId, { text: 'cancel probe' }]);
+            const cancelledId = cancelled.rows[0].id;
+            const store = new PostgresGatewayStore(pool);
+            const cancellation = await store.requestCancellation(userId, cancelledId);
+            if (cancellation !== 'requested') throw new Error(`unexpected cancellation state ${cancellation}`);
+            const cancelledCompletion = await completeOrchestrationJob(pool, { id: cancelledId, result, words: 19, reviewRequired: false, ttlHours: 1 });
+            if (cancelledCompletion !== 'cancelled') throw new Error(`cancelled completion published: ${cancelledCompletion}`);
+            const cancelledCharge = await client.query('SELECT count(*)::int count FROM orchestration_usage_charges WHERE job_id=$1', [cancelledId]);
+            const cancelledOutput = await client.query('SELECT count(*)::int count FROM orchestration_outputs WHERE job_id=$1', [cancelledId]);
+            const finalUsage = await client.query('SELECT words_used FROM account_usage WHERE user_id=$1', [userId]);
+            if (cancelledCharge.rows[0].count !== 0 || cancelledOutput.rows[0].count !== 0 || Number(finalUsage.rows[0].words_used) !== 37) throw new Error('cancelled work was published or charged');
+          } finally {
+            if (userId) await client.query('DELETE FROM users WHERE id=$1', [userId]);
+            client.release();
+            await pool.end();
+          }
+          NODE
+      - name: Run synchronous versus BullMQ browser parity
+        run: npx playwright test --config playwright.full.config.ts tests/full/orchestration.spec.ts
+        working-directory: e2e
+      - name: Collect logs and remove isolated data
+        if: always()
+        run: |
+          docker compose ps --all > compose-status.log
+          docker compose logs --no-color > compose.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: production-orchestration-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            compose.log
+            compose-status.log
