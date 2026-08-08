@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test --config playwright.config.ts",
+    "test:ui": "playwright test --config playwright.config.ts",
+    "test:full": "playwright test --config playwright.full.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
