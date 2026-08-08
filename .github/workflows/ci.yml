@@ -119,8 +119,8 @@ jobs:
           test "$(redis-cli -h localhost ping)" = PONG
       - run: npm test
 
-  browser:
-    name: Browser, responsive, and accessibility tests
+  browser-ui:
+    name: Mocked UI browser tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,11 +132,65 @@ jobs:
         working-directory: e2e
       - run: npm ci
         working-directory: frontend
-      - run: npm test
+      - name: Run UI checks against the Playwright-managed Vite server
+        run: npm run test:ui
         working-directory: e2e
       - uses: actions/upload-artifact@v4
         if: failure()
-        with: { name: playwright-report, path: e2e/playwright-report }
+        with:
+          name: playwright-ui-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+
+  browser-full:
+    name: Full authenticated browser workflow
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: airem-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_e2e
+      POSTGRES_PASSWORD: e2e-postgres-password
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: e2e@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: mkdir -p deploy/tls && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build the isolated application stack and wait for health checks
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Apply migrations to the isolated database
+        run: |
+          docker compose exec -T accounts node dist/migrate.js
+          docker compose exec -T gateway node dist/migrate.js
+      - name: Require the target application to be available
+        run: curl --fail --silent --show-error --insecure --retry 10 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz >/dev/null
+      - name: Run full authenticated workflow without API mocks
+        run: npm run test:full
+        working-directory: e2e
+      - name: Collect container logs and remove isolated data
+        if: always()
+        run: |
+          docker compose ps --all > compose-status.log
+          docker compose logs --no-color > compose.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: authenticated-e2e-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            compose.log
+            compose-status.log
 
   security:
     name: Dependency and image security
