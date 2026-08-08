@@ -2,7 +2,7 @@
 
 AIREM production has one public application boundary: **React → `/api/*` → authenticated Fastify services → internal Python processor**. Browser clients must not call Flask/Jinja routes or `/internal/v1/*` directly.
 
-All processor operations exposed to React return structured JSON. Binary artifacts are available only through the authenticated gateway routes `/api/documents/preview/{jobId}/{path}` and `/api/documents/download/{jobId}/{path}`. The React API boundary normalizes historical processor-generated `/preview/*` and `/download/*` strings before components receive them; those historical paths are not public production routes.
+All processor operations exposed to clients return structured JSON. Binary artifacts are available only through the authenticated gateway routes `/api/documents/preview/{jobId}/{path}` and `/api/documents/download/{jobId}/{path}`. The production processor composition layer converts historical internal `/preview/*` and `/download/*` artifact strings to those canonical gateway URLs before a structured `/internal/v1/*` response leaves the processor. React repeats that normalization defensively for backward compatibility; historical paths are not public production routes.
 
 ## Authentication, ownership and errors
 
@@ -70,4 +70,4 @@ Validation and formatting application are not assigned a word-processing charge 
 
 ## Internal processor boundary
 
-The Python service remains the authoritative v21 domain engine. Production gateway calls use `/internal/v1/*`; legacy Flask/Jinja handlers may remain internally because protected v21 functions are still reused by the JSON composition layer, but they are not a supported browser/API surface. Nginx exposes only React and `/api/*`.
+The Python service remains the authoritative v21 domain engine. Production gateway calls use `/internal/v1/*`; legacy Flask/Jinja handlers may remain internally because protected v21 functions are still reused by the JSON composition layer, but they are not a supported browser/API surface. Nginx exposes only React, `/healthz`, and `/api/*`.
