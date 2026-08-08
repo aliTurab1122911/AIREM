@@ -27,7 +27,7 @@ export type QueuedProcessorCall = {
   usageKind?: UsageKind;
 };
 
-function validate<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown } }, value: unknown, message: string): T {
+function validate<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw Object.assign(new Error(message), { code: 'VALIDATION_ERROR', validation: parsed.error });
   return parsed.data;
