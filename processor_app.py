@@ -10,12 +10,13 @@ from pathlib import Path
 
 from flask import jsonify, request
 
-from app import app, get_job
+from app import app, get_job, list_profiles
 from processor_api import api_bp
 from processor_range_api import range_api_bp
 
 app.register_blueprint(api_bp)
 app.register_blueprint(range_api_bp)
+
 
 @app.before_request
 def protect_immutable_json_extraction():
@@ -40,6 +41,13 @@ def protect_immutable_json_extraction():
             "message": "This document already has an immutable extraction. Upload a new DOCX to create a different selection.",
         },
     }), 409
+
+
+@app.get("/internal/v1/rewrite/profiles")
+def rewrite_profiles_json():
+    """Expose the protected processor's profile registry through the JSON API."""
+    return jsonify({"profiles": list_profiles()})
+
 
 @app.get("/healthz")
 def healthz():
