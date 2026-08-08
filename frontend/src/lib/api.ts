@@ -1,14 +1,39 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(
-  /\/$/,
-  "",
-);
+import {
+  documentJobResponseSchema,
+  documentUploadResponseSchema,
+  extractionResponseSchema,
+  rewriteResponseSchema,
+  validationResponseSchema,
+  reinsertionResponseSchema,
+  textRewriteResponseSchema,
+  detectionResponseSchema,
+  detectionFileResponseSchema,
+  formattingAnalysisResponseSchema,
+  formattingApplyResponseSchema,
+  type RangeSelectionRequest,
+  type RewriteRequest,
+  type RewriteCycleRequest,
+  type ValidationRequest,
+  type ReinsertionRequest,
+  type TextRewriteRequest,
+  type FormattingApplyRequest,
+  type DocumentUploadResponse,
+  type DocumentJobResponse,
+  type ExtractionResponse,
+  type RewriteResponse,
+  type ValidationResponse,
+  type ReinsertionResponse,
+  type TextRewriteResponse,
+  type DetectionResponse,
+  type DetectionFileResponse,
+  type FormattingAnalysisResponse,
+  type FormattingApplyResponse,
+} from "@airem/contracts";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public details?: unknown,
-  ) {
+  constructor(message: string, public status: number, public details?: unknown) {
     super(message);
     this.name = "ApiError";
   }
@@ -32,6 +57,8 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/auth/verify",
 ]);
 
+type RuntimeSchema<T> = { parse(value: unknown): T };
+
 function cookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
   const prefix = `${encodeURIComponent(name)}=`;
@@ -52,6 +79,7 @@ function shouldAttachCsrf(url: string, path: string, method: string): boolean {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  schema?: RuntimeSchema<T>,
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const method = (options.method ?? "GET").toUpperCase();
@@ -61,64 +89,32 @@ export async function request<T>(
       : { "Content-Type": "application/json", ...options.headers },
   );
   const csrf = cookie("csrf");
-  if (csrf && shouldAttachCsrf(url, path, method)) {
-    headers.set("x-csrf-token", csrf);
-  }
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
+  if (csrf && shouldAttachCsrf(url, path, method)) headers.set("x-csrf-token", csrf);
+
+  const response = await fetch(url, { ...options, headers, credentials: "include" });
   if (!response.ok) {
     let details: unknown;
-    try {
-      details = await response.json();
-    } catch {
-      details = undefined;
-    }
+    try { details = await response.json(); } catch { details = undefined; }
     if (
       response.status === 401 &&
-      (details as { error?: { code?: string } } | undefined)?.error?.code ===
-        "AUTH_REQUIRED" &&
+      (details as { error?: { code?: string } } | undefined)?.error?.code === "AUTH_REQUIRED" &&
       typeof window !== "undefined"
-    ) {
-      window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
-    }
-    throw new ApiError(
-      `Request failed (${response.status})`,
-      response.status,
-      details,
-    );
+    ) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+    throw new ApiError(`Request failed (${response.status})`, response.status, details);
   }
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const value: unknown = await response.json();
+  return schema ? schema.parse(value) : value as T;
 }
 
 export interface DashboardData {
   allowance: { used: number; total: number };
   metrics: Array<{ label: string; value: number | string; change?: string }>;
-  onboarding: Array<{
-    id: string;
-    title: string;
-    description: string;
-    complete: boolean;
-  }>;
-  documents: Array<{
-    id: string;
-    title: string;
-    wordCount: number;
-    updatedAt: string;
-    status: string;
-  }>;
+  onboarding: Array<{ id: string; title: string; description: string; complete: boolean }>;
+  documents: Array<{ id: string; title: string; wordCount: number; updatedAt: string; status: string }>;
   plan: { name: string; renewsAt?: string; price?: string };
 }
-export type JobState =
-  | "queued"
-  | "processing"
-  | "review_required"
-  | "completed"
-  | "failed"
-  | "expired";
+export type JobState = "queued" | "processing" | "review_required" | "completed" | "failed" | "expired";
 export interface ProcessingJob {
   id: string;
   operation: string;
@@ -133,138 +129,60 @@ export interface ProcessingJob {
 
 export const api = {
   session: () => request<{ user: AuthUser }>("/api/auth/session"),
-  uploadDocument: (file: File) => {
+  uploadDocument: (file: File): Promise<DocumentUploadResponse> => {
     const body = new FormData();
     body.append("docx_file", file);
-    return request<Record<string, unknown>>("/api/documents/upload", {
-      method: "POST",
-      body,
-    });
+    return request("/api/documents/upload", { method: "POST", body }, documentUploadResponseSchema);
   },
-  documentJob: (id: string) =>
-    request<Record<string, unknown>>(`/api/documents/jobs/${id}`),
-  extractRanges: (id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/ranges/${id}/extract`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  rewriteProfiles: () =>
-    request<Record<string, unknown>>("/api/rewrite/profiles"),
-  rewriteDocument: (
-    id: string,
-    payload: Record<string, unknown>,
-    cycle = false,
-  ) =>
-    request<Record<string, unknown>>(
-      `/api/rewrite/${id}${cycle ? "/cycles" : ""}`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    ),
-  validateDocument: (id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/validation/${id}`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  reinsertDocument: (id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/reinsertion/${id}`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  rewriteText: (payload: {
-    text: string;
-    profile?: string;
-    intensity?: number;
-  }) =>
-    request<Record<string, unknown>>("/api/text/rewrite", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  detectText: (text: string) =>
-    request<Record<string, unknown>>("/api/detection/text", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    }),
-  detectFile: (file: File) => {
+  documentJob: (id: string): Promise<DocumentJobResponse> =>
+    request(`/api/documents/jobs/${id}`, {}, documentJobResponseSchema),
+  extractRanges: (id: string, payload: RangeSelectionRequest): Promise<ExtractionResponse> =>
+    request(`/api/ranges/${id}/extract`, { method: "POST", body: JSON.stringify(payload) }, extractionResponseSchema),
+  rewriteProfiles: () => request<Record<string, unknown>>("/api/rewrite/profiles"),
+  rewriteDocument: (id: string, payload: RewriteRequest): Promise<RewriteResponse> =>
+    request(`/api/rewrite/${id}`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
+  rewriteDocumentCycle: (id: string, payload: RewriteCycleRequest): Promise<RewriteResponse> =>
+    request(`/api/rewrite/${id}/cycles`, { method: "POST", body: JSON.stringify(payload) }, rewriteResponseSchema),
+  validateDocument: (id: string, payload: ValidationRequest): Promise<ValidationResponse> =>
+    request(`/api/validation/${id}`, { method: "POST", body: JSON.stringify(payload) }, validationResponseSchema),
+  reinsertDocument: (id: string, payload: ReinsertionRequest): Promise<ReinsertionResponse> =>
+    request(`/api/reinsertion/${id}`, { method: "POST", body: JSON.stringify(payload) }, reinsertionResponseSchema),
+  rewriteText: (payload: TextRewriteRequest): Promise<TextRewriteResponse> =>
+    request("/api/text/rewrite", { method: "POST", body: JSON.stringify(payload) }, textRewriteResponseSchema),
+  detectText: (text: string): Promise<DetectionResponse> =>
+    request("/api/detection/text", { method: "POST", body: JSON.stringify({ text }) }, detectionResponseSchema),
+  detectFile: (file: File): Promise<DetectionFileResponse> => {
     const body = new FormData();
     body.append("file", file);
-    return request<Record<string, unknown>>("/api/detection/file", {
-      method: "POST",
-      body,
-    });
+    return request("/api/detection/file", { method: "POST", body }, detectionFileResponseSchema);
   },
-  analyseFormatting: (file: File) => {
+  analyseFormatting: (file: File): Promise<FormattingAnalysisResponse> => {
     const body = new FormData();
     body.append("docx_file", file);
-    return request<Record<string, unknown>>("/api/formatting/analyse", {
-      method: "POST",
-      body,
-    });
+    return request("/api/formatting/analyse", { method: "POST", body }, formattingAnalysisResponseSchema);
   },
-  applyFormatting: (
-    id: string,
-    settings: Record<string, string | number | boolean>,
-  ) =>
-    request<Record<string, unknown>>(`/api/formatting/apply/${id}`, {
+  applyFormatting: (id: string, settings: FormattingApplyRequest["settings"]): Promise<FormattingApplyResponse> =>
+    request(`/api/formatting/apply/${id}`, {
       method: "POST",
-      body: JSON.stringify({ settings }),
-    }),
+      body: JSON.stringify({ settings } satisfies FormattingApplyRequest),
+    }, formattingApplyResponseSchema),
   downloadUrl: (id: string, filename: string) =>
     `${API_BASE_URL}/api/documents/download/${id}/${encodeURIComponent(filename)}`,
-  accountDashboard: () =>
-    request<import("../features/dashboard/types").AccountDashboard>(
-      "/api/account/dashboard",
-    ),
-  usageHistory: () =>
-    request<
-      import("../features/dashboard/types").AccountDashboard["usageHistory"]
-    >("/api/account/usage-history"),
-  notifications: () =>
-    request<
-      import("../features/dashboard/types").AccountDashboard["notifications"]
-    >("/api/account/notifications"),
+  accountDashboard: () => request<import("../features/dashboard/types").AccountDashboard>("/api/account/dashboard"),
+  usageHistory: () => request<import("../features/dashboard/types").AccountDashboard["usageHistory"]>("/api/account/usage-history"),
+  notifications: () => request<import("../features/dashboard/types").AccountDashboard["notifications"]>("/api/account/notifications"),
   dashboard: () => request<DashboardData>("/api/dashboard"),
   jobs: () => request<{ jobs: ProcessingJob[] }>("/api/jobs"),
   cancelJob: (id: string) => request(`/api/jobs/${id}`, { method: "DELETE" }),
-  login: (email: string, password: string) =>
-    request("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-  register: (displayName: string, email: string, password: string) =>
-    request("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ displayName, email, password }),
-    }),
-  forgotPassword: (email: string) =>
-    request("/api/auth/password-reset/request", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-  verifyEmail: (token: string) =>
-    request("/api/auth/verify", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-  completePasswordReset: (token: string, password: string) =>
-    request("/api/auth/password-reset/complete", {
-      method: "POST",
-      body: JSON.stringify({ token, password }),
-    }),
+  login: (email: string, password: string) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  register: (displayName: string, email: string, password: string) => request("/api/auth/register", { method: "POST", body: JSON.stringify({ displayName, email, password }) }),
+  forgotPassword: (email: string) => request("/api/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
+  verifyEmail: (token: string) => request("/api/auth/verify", { method: "POST", body: JSON.stringify({ token }) }),
+  completePasswordReset: (token: string, password: string) => request("/api/auth/password-reset/complete", { method: "POST", body: JSON.stringify({ token, password }) }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
-  updateProfile: (displayName: string | null) =>
-    request("/api/account", {
-      method: "PATCH",
-      body: JSON.stringify({ displayName }),
-    }),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    request("/api/account/password", {
-      method: "POST",
-      body: JSON.stringify({ currentPassword, newPassword }),
-    }),
-  markNotificationRead: (id: string) =>
-    request(`/api/account/notifications/${id}/read`, { method: "PATCH" }),
+  updateProfile: (displayName: string | null) => request("/api/account", { method: "PATCH", body: JSON.stringify({ displayName }) }),
+  changePassword: (currentPassword: string, newPassword: string) => request("/api/account/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+  markNotificationRead: (id: string) => request(`/api/account/notifications/${id}/read`, { method: "PATCH" }),
   deleteAccount: () => request("/api/account", { method: "DELETE" }),
 };
 
