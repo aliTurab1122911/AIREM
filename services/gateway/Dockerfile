@@ -21,6 +21,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY e2e/package.json e2e/package.json
 RUN npm ci --omit=dev --workspace @airem/gateway --include-workspace-root && npm cache clean --force
 COPY --from=build --chown=node:node /app/services/gateway/dist dist
+COPY --chown=node:node services/gateway/migrations migrations
 COPY --from=build --chown=node:node /app/packages/contracts/dist packages/contracts/dist
 USER node
 EXPOSE 4000
