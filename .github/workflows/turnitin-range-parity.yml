@@ -1,0 +1,85 @@
+name: Turnitin Range Parity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-and-goldens:
+    name: Turnitin contracts and golden fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - name: Verify protected processing baseline
+        run: python ci/verify_protected_processing.py
+      - name: Install JavaScript workspaces
+        run: npm ci
+      - name: Build canonical contracts
+        run: npm run build --workspace @airem/contracts
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @airem/gateway
+      - name: Typecheck React
+        run: npm run typecheck --workspace airem-frontend
+      - name: Run Turnitin range contract regression
+        run: npm test --workspace @airem/gateway -- --run tests/turnitin-range-contracts.test.ts
+      - name: Install processor dependencies
+        run: python -m pip install --requirement requirements.txt pytest
+      - name: Run exact/expanded mapping and range-session goldens
+        run: python -m pytest -q tests/test_v18_turnitin_mapping.py tests/test_v19_openai_range_edit.py tests/test_v21_turnitin_range_api.py
+
+  browser-e2e:
+    name: Real Turnitin range browser E2E
+    needs: contracts-and-goldens
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: airem-turnitin-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: airem_turnitin_e2e
+      POSTGRES_PASSWORD: e2e-postgres-password
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-characters
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM: e2e@example.test
+      E2E_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Create ephemeral TLS certificate
+        run: mkdir -p deploy/tls && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout deploy/tls/tls.key -out deploy/tls/tls.crt
+      - name: Build isolated production stack
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Apply service migrations
+        run: |
+          docker compose exec -T accounts node services/accounts/dist/migrate.js
+          docker compose exec -T gateway node services/gateway/dist/migrate.js
+      - name: Require public application health
+        run: curl --fail --silent --show-error --insecure --retry 10 --retry-all-errors --retry-delay 2 https://127.0.0.1:8443/healthz >/dev/null
+      - name: Run verified Turnitin selected-range browser workflow
+        run: npx playwright test --config playwright.full.config.ts tests/full/turnitin-range-workflow.spec.ts
+        working-directory: e2e
+      - name: Collect logs and remove isolated data
+        if: always()
+        run: |
+          docker compose ps --all > compose-status.log
+          docker compose logs --no-color > compose.log 2>&1
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: turnitin-range-e2e-failure
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            compose.log
+            compose-status.log
