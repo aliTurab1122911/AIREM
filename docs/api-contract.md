@@ -14,7 +14,7 @@ This compatibility representation deliberately preserves all legacy content whil
 
 Common statuses are `200` success, `400` malformed JSON or missing multipart field, `401` no valid session, `404` unknown/not-owned job or result, `413` upload exceeds `UPLOAD_MAX_BYTES`, `415` wrong content type/extension, `422` schema validation failure, `429` rate limit, and `502` processor/response error. Gateway errors have `{"error":{"code":"...","issues":[{"path":"field","message":"..."}]},"requestId":"..."}`. Validation issues are returned with `422 VALIDATION_ERROR`; invalid JSON uses `400 INVALID_JSON`.
 
-Jobs may expose `queued`, `extracting`, `rewriting`, `validating`, `reinserting`, `complete`, or `failed`. The current synchronous Flask implementation usually returns a completed result immediately; clients must tolerate these states so processing can become asynchronous without a contract change.
+The document, range, rewrite, validation, reinsertion, detection, formatting, preview, download, and optional OpenAI adapter routes documented below are synchronous gateway-to-Flask workflows. They return the processor response on the original request and do not require a queue worker. Their legacy processor payloads may expose `queued`, `extracting`, `rewriting`, `validating`, `reinserting`, `complete`, or `failed` while the Flask workflow advances.
 
 ## Documents and inventory
 
@@ -75,6 +75,13 @@ Rewrite JSON accepts `profile` (name or custom object), `profile_id`, `intensity
 Existing processor URLs and payloads are unchanged, and `app.py` remains the implementation of document operations. The gateway adapters only authenticate, authorize, validate, translate JSON-to-form where required, normalize rendered HTML, track usage, and stream files. Previously published gateway paths for documents, rewrite, detection, and formatting remain represented by the explicit routes above; direct legacy gateway catch-all routes are intentionally not part of the public contract.
 
 ## Queue-backed processing jobs
+
+The `/api/jobs` orchestration API is asynchronous and requires at least one
+registered worker. `GET /healthz` reports `200` with
+`{"ok":true,"queue":{"workersAvailable":true}}` only when a worker is
+available; otherwise it reports `503`, and `POST /api/jobs` returns
+`503 QUEUE_UNAVAILABLE` without creating a database job. The default Compose
+stack starts a worker.
 
 Authenticated clients create a job with `POST /api/jobs`, an `Idempotency-Key` header (8–200 characters), and JSON `{ "operation": "text_rewrite", "payload": { ... } }`. Supported operations are `text_rewrite`, `text_detection`, `document_rewrite`, `document_validation`, and `formatting_apply`; document operations include the existing Flask `source_job_id` in the payload. A new request returns `202`; replaying the same owner/key returns the original job with `200` and never enqueues another copy.
 

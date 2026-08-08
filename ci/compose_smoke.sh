@@ -32,6 +32,29 @@ curl --fail --silent --show-error --insecure -b "$cookies" \
   "$base/api/documents/download/$job_id/1_org/sample_1_org.docx" >"$download_after"
 cmp "$download_before" "$download_after"
 
+# Exercise the queue-backed path through the public gateway and a real worker.
+queued_response=$(curl --fail --silent --show-error --insecure -b "$cookies" \
+  -H 'content-type: application/json' \
+  -H "idempotency-key: smoke-queued-$(date +%s)-$$" \
+  --data '{"operation":"text_rewrite","payload":{"text":"This is a short sentence for the queued orchestration smoke test."}}' \
+  "$base/api/jobs")
+queued_job_id=$(python -c 'import json,sys; print(json.load(sys.stdin)["job"]["id"])' <<<"$queued_response")
+deadline=$((SECONDS + 120))
+queued_state=queued
+while (( SECONDS < deadline )); do
+  queued_state=$(curl --fail --silent --show-error --insecure -b "$cookies" \
+    "$base/api/jobs/$queued_job_id" | python -c 'import json,sys; print(json.load(sys.stdin)["job"]["state"])')
+  case "$queued_state" in
+    completed|review_required) break ;;
+    failed|expired) echo "queued job $queued_job_id reached unexpected terminal state: $queued_state" >&2; exit 1 ;;
+  esac
+  sleep 1
+done
+if [[ "$queued_state" != completed && "$queued_state" != review_required ]]; then
+  echo "queued job $queued_job_id did not reach a terminal state before timeout (last state: $queued_state)" >&2
+  exit 1
+fi
+
 # Exercise the browser-facing proxy route against the account service for both
 # an existing and an unknown address. Both responses must remain indistinguishable.
 for email in smoke@example.test unknown@example.test; do

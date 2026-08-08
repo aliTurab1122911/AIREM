@@ -94,7 +94,6 @@ services:
 
   worker:
     <<: *service-defaults
-    profiles: [workers]
     build: {context: ., dockerfile: services/gateway/Dockerfile}
     command: [node, dist/worker.js]
     environment:
