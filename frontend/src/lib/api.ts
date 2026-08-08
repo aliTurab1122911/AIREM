@@ -14,18 +14,50 @@ export class ApiError extends Error {
   }
 }
 
+const SAFE_METHODS = new Set(["GET", "HEAD"]);
+const CSRF_EXEMPT_PATHS = new Set([
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/password-reset/request",
+  "/api/auth/password-reset/complete",
+  "/api/auth/verify",
+]);
+
+function cookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const prefix = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
+  return value === undefined ? undefined : decodeURIComponent(value);
+}
+
+function shouldAttachCsrf(url: string, path: string, method: string): boolean {
+  if (SAFE_METHODS.has(method) || CSRF_EXEMPT_PATHS.has(path)) return false;
+  if (typeof window === "undefined") return false;
+  return new URL(url, window.location.href).origin === window.location.origin;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const url = `${API_BASE_URL}${path}`;
+  const method = (options.method ?? "GET").toUpperCase();
+  const headers = new Headers(
+    options.body instanceof FormData
+      ? options.headers
+      : { "Content-Type": "application/json", ...options.headers },
+  );
+  const csrf = cookie("csrf");
+  if (csrf && shouldAttachCsrf(url, path, method)) {
+    headers.set("x-csrf-token", csrf);
+  }
+  const response = await fetch(url, {
     ...options,
-    headers: {
-      ...(options.body instanceof FormData
-        ? {}
-        : { "Content-Type": "application/json" }),
-      ...options.headers,
-    },
+    headers,
     credentials: "include",
   });
   if (!response.ok) {
@@ -203,6 +235,19 @@ export const api = {
       body: JSON.stringify({ token, password }),
     }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+  updateProfile: (displayName: string | null) =>
+    request("/api/account", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName }),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request("/api/account/password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  markNotificationRead: (id: string) =>
+    request(`/api/account/notifications/${id}/read`, { method: "PATCH" }),
+  deleteAccount: () => request("/api/account", { method: "DELETE" }),
 };
 
 export { API_BASE_URL };
