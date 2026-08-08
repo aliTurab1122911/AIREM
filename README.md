@@ -189,7 +189,9 @@ docker compose logs -f --tail=200 frontend accounts gateway processor worker
 
 Create database and controlled-document-volume backups while the stack is
 quiescent. Database dumps are consistent online; stop document writers while
-archiving the volume:
+archiving the volume. The `documents` volume is mounted at `/app/workspace` in
+the processor and contains the complete per-job workspaces, including uploaded
+source documents and generated downloads:
 
 ```bash
 mkdir -p backups
@@ -214,6 +216,11 @@ docker run --rm -v airem_documents:/target -v "$PWD/backups:/backup:ro" alpine \
   tar xzf /backup/documents.tgz -C /target
 docker compose up -d
 ```
+
+On startup, the one-shot `documents-init` service restores ownership of the
+mounted `/app/workspace` tree to the processor's non-root `airem` user. This
+also makes files from an older backup or Docker-created volume writable before
+the processor starts.
 
 ### Upgrades and teardown
 
