@@ -65,7 +65,7 @@ test("verified Turnitin ranges can be expanded, reviewed, exported and continued
 
   await page.getByRole("button", { name: "Continue into AIREM" }).click();
   await expect(page.getByTestId("rewrite-workspace")).toBeVisible();
-  await expect(page.getByLabel("Source text part 1")).toContainText("approved during selected-range review");
+  await expect(page.getByLabel("Source text part 1")).toHaveValue(/approved during selected-range review/);
 
   // The continued source remains a normal AIREM extraction and can enter the
   // deterministic rewrite path without returning to the pre-review Turnitin text.
