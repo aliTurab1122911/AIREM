@@ -30,9 +30,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test("registration, login, logout, and password-reset initiation", async ({
-  page,
-}) => {
+test("registration, login, and logout", async ({ page }) => {
   const requests: string[] = [];
   await page.route("**/api/auth/**", async (route) => {
     requests.push(new URL(route.request().url()).pathname);
@@ -53,17 +51,42 @@ test("registration, login, logout, and password-reset initiation", async ({
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app$/);
   await page.getByRole("button", { name: "Log out" }).click();
-  await page.goto("/forgot-password");
-  await page.getByLabel("Email address").fill("alex@example.test");
-  await page.getByRole("button", { name: "Send reset link" }).click();
-  await expect(page.getByRole("status")).toContainText("If an account exists");
   expect(requests).toEqual(
-    expect.arrayContaining([
-      "/api/auth/register",
-      "/api/auth/login",
-      "/api/auth/forgot-password",
-    ]),
+    expect.arrayContaining(["/api/auth/register", "/api/auth/login"]),
   );
+});
+
+test("forgot-password uses the public proxy path without revealing accounts", async ({
+  page,
+}) => {
+  const submissions: Array<{ path: string; email: string }> = [];
+  await page.route("**/api/auth/password-reset/request", async (route) => {
+    submissions.push({
+      path: new URL(route.request().url()).pathname,
+      email: route.request().postDataJSON().email,
+    });
+    await route.fulfill({ status: 200, json: { ok: true } });
+  });
+
+  for (const email of ["alex@example.test", "unknown@example.test"]) {
+    await page.goto("/forgot-password");
+    await page.getByLabel("Email address").fill(email);
+    await page.getByRole("button", { name: "Send reset link" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "If an account exists",
+    );
+  }
+
+  expect(submissions).toEqual([
+    {
+      path: "/api/auth/password-reset/request",
+      email: "alex@example.test",
+    },
+    {
+      path: "/api/auth/password-reset/request",
+      email: "unknown@example.test",
+    },
+  ]);
 });
 
 test("expired sessions are returned to login", async ({ page }) => {
