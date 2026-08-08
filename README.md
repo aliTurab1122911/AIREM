@@ -4,6 +4,15 @@ AIREM v21 is a Flask/Python DOCX rewriting and formatting application. Its norma
 
 The optional OpenAI range editor is retained as a separate user-invoked editing tool. It is not part of the Linguistic V1 rewrite algorithm.
 
+## JavaScript dependency toolchain
+
+The repository-level npm workspace covers the frontend, both Node services, the
+shared contracts package, and the Playwright end-to-end tests. The dependency
+lockfile was generated and validated with **Node.js 24.15.0** and **npm 11.4.2**;
+application containers and CI run on Node.js 22, which is also supported by the
+workspace engine range. Run `npm ci` from the repository root for a reproducible
+installation of every workspace.
+
 ## Main workflows
 
 1. **Word Document Rewriter** — extract selected DOCX content, rewrite it and reinsert it into the source document.
