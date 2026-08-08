@@ -88,4 +88,71 @@ describe('gateway account isolation', () => {
     expect(result.rawPayload).toEqual(bytes);
     await app.close();
   });
+
+  it('forwards validated JSON as deterministic bytes with an explicit length', async () => {
+    let observedBody: Buffer | undefined;
+    let observedLength: string | string[] | undefined;
+    const app = await buildApp(new MemoryStore(), cfg, async args => {
+      observedLength = args.headers['content-length'];
+      expect(Buffer.isBuffer(args.body)).toBe(true);
+      observedBody = args.body as Buffer;
+      return response(JSON.stringify({ ok: true, rewritten_text: 'done' }));
+    });
+    const payload = { text: 'A deterministic JSON forwarding test.', profile: 'natural', intensity: 0.55 };
+    const result = await app.inject({
+      method: 'POST', url: '/api/text/rewrite',
+      headers: { cookie: 'session=alice-session', 'content-type': 'application/json' },
+      payload: JSON.stringify(payload),
+    });
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(observedBody!.toString('utf8'))).toEqual(payload);
+    expect(Number(observedLength)).toBe(observedBody!.length);
+    await app.close();
+  });
+
+  it('retains multipart field discovery when a DOCX body exceeds 2 MB', async () => {
+    const boundary = '----airem-large-first-chunk';
+    const prefix = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="docx_file"; filename="large.docx"\r\n` +
+      'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n',
+      'latin1',
+    );
+    const fileBytes = Buffer.alloc(2 * 1024 * 1024 + 64 * 1024, 0x41);
+    const suffix = Buffer.from(`\r\n--${boundary}--\r\n`, 'latin1');
+    const multipart = Buffer.concat([prefix, fileBytes, suffix]);
+    let forwarded = 0;
+    const largeCfg = { ...cfg, UPLOAD_MAX_BYTES: 4 * 1024 * 1024 };
+    const app = await buildApp(new MemoryStore(), largeCfg, async args => {
+      for await (const chunk of args.body as AsyncIterable<Buffer>) forwarded += Buffer.from(chunk).length;
+      return response('{}');
+    });
+    const result = await app.inject({
+      method: 'POST', url: '/api/documents/upload',
+      headers: {
+        cookie: 'session=alice-session',
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': String(multipart.length),
+      },
+      payload: multipart,
+    });
+    expect(result.statusCode).toBe(200);
+    expect(forwarded).toBe(multipart.length);
+    await app.close();
+  });
+
+  it('reports processor connectivity failures without exposing exception text', async () => {
+    const app = await buildApp(new MemoryStore(), cfg, async () => {
+      const error = Object.assign(new Error('secret internal socket detail'), { code: 'ECONNREFUSED' });
+      throw error;
+    });
+    const result = await app.inject({
+      method: 'POST', url: '/api/detection/text',
+      headers: { cookie: 'session=alice-session', 'content-type': 'application/json' },
+      payload: JSON.stringify({ text: 'transport failure classification' }),
+    });
+    expect(result.statusCode).toBe(502);
+    expect(result.json().error.code).toBe('PROCESSOR_UNAVAILABLE');
+    expect(result.body).not.toContain('secret internal socket detail');
+    await app.close();
+  });
 });
