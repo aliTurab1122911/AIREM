@@ -7,12 +7,15 @@ import { Topbar } from "./Topbar";
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const navigate = useNavigate();
   const logout = async () => {
+    setLogoutError("");
     try {
       await api.logout();
-    } finally {
       navigate("/login", { replace: true });
+    } catch {
+      setLogoutError("Log out failed. Please try again.");
     }
   };
   return (
@@ -26,6 +29,11 @@ export function AppShell() {
       />
       <div className="app-column">
         <Topbar onMenu={() => setMobileOpen(true)} />
+        {logoutError && (
+          <div className="form-error" role="alert">
+            {logoutError}
+          </div>
+        )}
         <main className="app-main">
           <Outlet />
         </main>
