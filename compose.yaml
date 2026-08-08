@@ -34,6 +34,12 @@ services:
       <<: *node-environment
       APP_ORIGIN: ${APP_ORIGIN:-https://localhost:8443}
       PORT: 4000
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
     expose: ["4000"]
     tmpfs: [/tmp:uid=1000,gid=1000,mode=0700]
     depends_on: {postgres: {condition: service_healthy}}
