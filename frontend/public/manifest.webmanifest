@@ -1,1 +1,1 @@
-{"name":"Airem","short_name":"Airem","description":"Airem writing workspace","start_url":"/","display":"standalone","background_color":"#f5f4ee","theme_color":"#0d2119","icons":[{"src":"/brand/app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{"name":"Airem","short_name":"Airem","description":"Airem writing workspace","start_url":"/","display":"standalone","background_color":"#f5f4ee","theme_color":"#0d2119","icons":[{"src":"/brand/app-icon.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
